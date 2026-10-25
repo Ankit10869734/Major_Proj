@@ -1,0 +1,59 @@
+# Built application files
+*.apk
+*.aar
+*.ap_
+*.aab
+
+# Files for the ART/DALVIK VM
+*.dex
+
+# Java class files
+*.class
+
+# Generated files
+bin/
+gen/
+out/
+build/
+app/build/
+**/build/
+.kotlin/
+
+# Gradle caches
+.gradle/
+
+# Local configuration file (sdk.dir, secrets, local properties)
+local.properties
+keystore.properties
+signing.properties
+secrets.properties
+
+# Firebase & GCP Service Accounts
+serviceAccountKey*.json
+firebase-adminsdk*.json
+
+# Android Studio / IDE project files
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+/captures/
+
+# External native build output
+.externalNativeBuild/
+.cxx/
+
+# Environment files and credentials
+.env
+.env.*
+!.env.example
+
+# Signing keystores & certificates
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+
+# Log files
+*.log
