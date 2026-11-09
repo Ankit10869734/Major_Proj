@@ -7,34 +7,45 @@ import java.io.File
  * MOODMIX BACKEND & API CONFIGURATION
  * ============================================================================
  *
- * BACKEND TEAM NOTE:
- * Change [BASE_URL] below to point to your backend server or Cloudflare tunnel.
- * Set [USE_MOCK_DATA] = false when testing live backend model server.
+ * PRODUCTION BACKEND:
+ * Hosted on Render at https://moodmix-backend.onrender.com
  *
- * Examples:
- * - Local Flask/FastAPI server: "http://10.0.2.2:8000" (Android Emulator)
- * - Local LAN server:           "http://192.168.1.50:8000"
- * - Cloudflare Quick Tunnel:   "https://YOUR-SUBDOMAIN.trycloudflare.com"
+ * QWEN LLM API:
+ * Hosted at https://valiant-program-parched.ngrok-free.dev
  * ============================================================================
  */
 object ApiConfig {
 
-    /**
-     * Set to true to test UI flow locally without needing a live backend server.
-     * Set to false when connecting to your team's live model server.
+    /*
+     * DEPLOYED FASTAPI PRODUCTION BACKEND SERVER URL
      */
-    const val USE_MOCK_DATA = true
+    const val BASE_URL = "https://moodmix-backend.onrender.com"
 
     /*
-     * PASTE YOUR TEAM'S SERVER URL HERE
+     * QWEN LLM API CONFIGURATION
      */
-    const val BASE_URL = "https://YOUR-TEAM-BACKEND-URL"
+    const val QWEN_BASE_URL = "https://valiant-program-parched.ngrok-free.dev"
+
+    val QWEN_ANALYZE_ENDPOINT: String
+        get() = "$QWEN_BASE_URL/analyze"
 
     /*
-     * API ENDPOINTS
+     * API ENDPOINTS FOR DAYDREAM & FASTAPI BACKEND
      */
     val GENERATE_ENDPOINT: String
         get() = "$BASE_URL/generate"
+
+    val STATUS_ENDPOINT: String
+        get() = "$BASE_URL/status"
+
+    val GENERATE_AND_WAIT_ENDPOINT: String
+        get() = "$BASE_URL/generate-and-wait"
+
+    val HEALTH_ENDPOINT: String
+        get() = "$BASE_URL/health"
+
+    val USAGE_ENDPOINT: String
+        get() = "$BASE_URL/usage"
 
     val RECOMMENDATIONS_ENDPOINT: String
         get() = "$BASE_URL/recommendations"
@@ -53,32 +64,44 @@ object ApiConfig {
 
     /*
      * TIMEOUT SETTINGS
-     * Music and lyrics generation can take longer than normal API calls.
      */
-    const val CONNECT_TIMEOUT_SECONDS = 30L
-    const val WRITE_TIMEOUT_SECONDS = 30L
+    const val CONNECT_TIMEOUT_SECONDS = 45L
+    const val WRITE_TIMEOUT_SECONDS = 45L
     const val READ_TIMEOUT_MINUTES = 10L
     const val CALL_TIMEOUT_MINUTES = 10L
 }
 
 /**
- * Outgoing payload sent to the backend model server for music generation.
+ * Outgoing payload sent to the backend server for music generation.
  */
 data class MusicGenerationRequest(
     val prompt: String,
     val maxNewTokens: Int = 256,
     val generateLyrics: Boolean = false,
     val genre: String? = null,
+    val bpm: Int? = null,
 )
 
 /**
- * Response payload received from the backend model server when returning JSON.
+ * Response payload received from the backend server when returning JSON.
  */
 data class MusicGenerationResponse(
     val status: String? = "success",
+    val songId: String? = null,
     val songTitle: String? = null,
     val audioUrl: String? = null,
     val lyrics: String? = null,
+    val message: String? = null,
+)
+
+/**
+ * Daydream polling status response payload.
+ */
+data class DaydreamStatusResponse(
+    val status: String? = "completed",
+    val songId: String? = null,
+    val audioUrl: String? = null,
+    val error: String? = null,
     val message: String? = null,
 )
 

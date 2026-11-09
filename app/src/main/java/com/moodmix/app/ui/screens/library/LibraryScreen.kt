@@ -4,8 +4,8 @@ import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,13 +14,23 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -28,98 +38,66 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
-import androidx.core.net.toUri
-import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.moodmix.app.domain.model.PlayableTrack
+import com.moodmix.app.playback.PlayerController
+import com.moodmix.app.ui.components.CoverArt
+import com.moodmix.app.ui.components.EmptyState
+import com.moodmix.app.ui.components.ErrorState
+import com.moodmix.app.ui.components.LoadingState
+import com.moodmix.app.ui.components.SearchField
+import com.moodmix.app.ui.components.SectionHeader
+import com.moodmix.app.ui.components.TrackRow
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-
-data class LibraryAudioItem(
-    val title: String,
-    val subtitle: String,
-    val file: File? = null,
-    val isDemo: Boolean = false,
-    val genre: String = "Generated Audio",
-    val durationText: String = "WAV Audio"
-)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryScreen(
-    onNavigateToGenerate: (String) -> Unit = {}
+    onNavigateToGenerate: (String) -> Unit = {},
+    viewModel: LibraryViewModel = viewModel()
 ) {
     val context = LocalContext.current
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    var realGeneratedTracks by remember { mutableStateOf<List<LibraryAudioItem>>(emptyList()) }
+    val currentTrack by PlayerController.currentTrack.collectAsStateWithLifecycle()
+    val currentTrackId by PlayerController.currentTrackId.collectAsStateWithLifecycle()
+    val isPlaying by PlayerController.isPlaying.collectAsStateWithLifecycle()
+    val isBuffering by PlayerController.isBuffering.collectAsStateWithLifecycle()
+    val position by PlayerController.position.collectAsStateWithLifecycle()
+    val duration by PlayerController.duration.collectAsStateWithLifecycle()
 
-    val demoPlaylists = listOf(
-        LibraryAudioItem("My Favorites (Demo)", "Playlist • 18 tracks", isDemo = true, genre = "Mixed Moods", durationText = "1h 12m"),
-        LibraryAudioItem("Study Sessions (Demo)", "Playlist • 24 tracks", isDemo = true, genre = "Lo-Fi & Ambient", durationText = "1h 45m"),
-        LibraryAudioItem("Workout Mix (Demo)", "Playlist • 15 tracks", isDemo = true, genre = "Electronic & Energy", durationText = "54m")
-    )
-
-    // Load actual generated files from cache directory
     LaunchedEffect(Unit) {
-        realGeneratedTracks = loadGeneratedAudioFiles(context)
-    }
-
-    var selectedItem by remember { mutableStateOf<LibraryAudioItem?>(null) }
-    var isPlaying by remember { mutableStateOf(false) }
-    var playbackPosition by remember { mutableLongStateOf(0L) }
-    var playbackDuration by remember { mutableLongStateOf(0L) }
-
-    val player = remember(context) { ExoPlayer.Builder(context).build() }
-
-    DisposableEffect(player) {
-        val listener = object : Player.Listener {
-            override fun onIsPlayingChanged(playing: Boolean) {
-                isPlaying = playing
-            }
-
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                if (playbackState == Player.STATE_READY) {
-                    playbackDuration = player.duration.coerceAtLeast(0L)
-                } else if (playbackState == Player.STATE_ENDED) {
-                    isPlaying = false
-                }
-            }
-        }
-        player.addListener(listener)
-        onDispose {
-            player.removeListener(listener)
-            player.release()
-        }
-    }
-
-    LaunchedEffect(selectedItem, isPlaying) {
-        while (isActive && isPlaying) {
-            playbackPosition = player.currentPosition
-            if (player.duration > 0) {
-                playbackDuration = player.duration
-            }
-            delay(250)
-        }
+        viewModel.loadLibraryData()
     }
 
     val sheetState = rememberModalBottomSheetState()
+
+    val displayTracks = remember(uiState.activeTab, uiState.searchQuery, uiState.generatedTracks, uiState.likedTracks, uiState.recentlyPlayedTracks) {
+        val baseList = when (uiState.activeTab) {
+            LibraryTab.ALL -> (uiState.generatedTracks + uiState.likedTracks + uiState.recentlyPlayedTracks).distinctBy { it.id }
+            LibraryTab.GENERATED -> uiState.generatedTracks
+            LibraryTab.LIKED -> uiState.likedTracks
+            LibraryTab.RECENTLY_PLAYED -> uiState.recentlyPlayedTracks
+        }
+        if (uiState.searchQuery.isBlank()) {
+            baseList
+        } else {
+            baseList.filter {
+                it.title.contains(uiState.searchQuery, ignoreCase = true) ||
+                it.artist.contains(uiState.searchQuery, ignoreCase = true)
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -127,122 +105,154 @@ fun LibraryScreen(
             .background(MaterialTheme.colorScheme.background)
             .padding(horizontal = 20.dp, vertical = 24.dp)
     ) {
-
         Text(
             text = "Your Library",
             style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground
         )
 
         Text(
-            text = "Saved audio tracks, history & playlists",
+            text = "Saved AI creations, liked songs & listening history",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+        SearchField(
+            value = uiState.searchQuery,
+            onValueChange = { viewModel.onSearchQueryChanged(it) },
+            placeholderText = "Filter library by title or artist..."
+        )
+
+        if (!uiState.libraryInsights.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Text(
+                        text = "🤖 Qwen Listening Insights",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = uiState.libraryInsights!!,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Filter Tabs Row
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             item {
-                Text(
-                    text = "Generated Tracks (${realGeneratedTracks.size})",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
+                FilterChip(
+                    selected = uiState.activeTab == LibraryTab.ALL,
+                    onClick = { viewModel.onTabSelected(LibraryTab.ALL) },
+                    label = { Text("All (${(uiState.generatedTracks + uiState.likedTracks + uiState.recentlyPlayedTracks).distinctBy { it.id }.size})") }
                 )
-                Spacer(modifier = Modifier.height(8.dp))
             }
+            item {
+                FilterChip(
+                    selected = uiState.activeTab == LibraryTab.GENERATED,
+                    onClick = { viewModel.onTabSelected(LibraryTab.GENERATED) },
+                    label = { Text("🤖 Generated (${uiState.generatedTracks.size})") }
+                )
+            }
+            item {
+                FilterChip(
+                    selected = uiState.activeTab == LibraryTab.LIKED,
+                    onClick = { viewModel.onTabSelected(LibraryTab.LIKED) },
+                    label = { Text("♥ Liked (${uiState.likedTracks.size})") }
+                )
+            }
+            item {
+                FilterChip(
+                    selected = uiState.activeTab == LibraryTab.RECENTLY_PLAYED,
+                    onClick = { viewModel.onTabSelected(LibraryTab.RECENTLY_PLAYED) },
+                    label = { Text("🕒 History (${uiState.recentlyPlayedTracks.size})") }
+                )
+            }
+        }
 
-            if (realGeneratedTracks.isEmpty()) {
-                item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant
-                        )
-                    ) {
-                        Column(modifier = Modifier.padding(18.dp)) {
-                            Text(
-                                text = "No generated tracks yet",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Create custom music tracks in the Generate tab and they will appear here.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(14.dp))
-                            Button(
-                                onClick = { onNavigateToGenerate("") },
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Text("Go to Generate →")
-                            }
-                        }
-                    }
+        Spacer(modifier = Modifier.height(18.dp))
+
+        if (uiState.isLoading) {
+            LoadingState(message = "Loading library...")
+        } else if (uiState.errorMessage != null) {
+            ErrorState(
+                message = uiState.errorMessage!!,
+                onRetry = { viewModel.loadLibraryData() }
+            )
+        } else if (displayTracks.isEmpty()) {
+            EmptyState(
+                title = if (uiState.activeTab == LibraryTab.GENERATED) "No AI generated tracks yet" else "No tracks found",
+                subtitle = if (uiState.activeTab == LibraryTab.GENERATED) "Create your first AI track in the Create tab!" else "Your library is empty. Discover or create tracks to build your library.",
+                actionText = "Create track now →",
+                onActionClick = { onNavigateToGenerate("") }
+            )
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                item(key = "section_header") {
+                    SectionHeader(title = "${uiState.activeTab.name.replace('_', ' ')} (${displayTracks.size})")
+                    Spacer(modifier = Modifier.height(6.dp))
                 }
-            } else {
-                items(realGeneratedTracks) { item ->
-                    LibraryRowItem(
-                        item = item,
+
+                items(
+                    items = displayTracks,
+                    key = { it.id }
+                ) { track ->
+                    val isTrackLiked = track.id in (uiState.likedTracks.map { it.id }.toSet())
+                    val badgeText = if (track.isGenerated) "🤖 MoodMix AI" else track.artist
+                    val isActive = (track.id == currentTrackId)
+
+                    TrackRow(
+                        title = track.title,
+                        subtitle = "$badgeText • ${track.genre ?: "Music"}",
+                        coverModel = track.artworkUrl,
+                        isActive = isActive,
+                        isPlaying = isPlaying,
+                        isBuffering = isBuffering,
                         onClick = {
-                            player.pause()
-                            selectedItem = item
-                            playbackPosition = 0L
-                            playbackDuration = 0L
-                            if (item.file != null && item.file.exists()) {
-                                player.setMediaItem(MediaItem.fromUri(item.file.toUri()))
-                                player.prepare()
+                            viewModel.selectTrack(track)
+                            viewModel.playTrack(track, displayTracks)
+                        },
+                        trailingContent = {
+                            IconButton(onClick = { viewModel.toggleLike(track) }) {
+                                Icon(
+                                    imageVector = if (isTrackLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                    contentDescription = "Like track",
+                                    tint = if (isTrackLiked) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
                     )
                 }
             }
-
-            item {
-                Spacer(modifier = Modifier.height(20.dp))
-
-                Text(
-                    text = "Demo Playlists",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-
-            items(demoPlaylists) { item ->
-                LibraryRowItem(
-                    item = item,
-                    onClick = {
-                        player.pause()
-                        selectedItem = item
-                        playbackPosition = 0L
-                        playbackDuration = 0L
-                        val sampleUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
-                        player.setMediaItem(MediaItem.fromUri(sampleUrl))
-                        player.prepare()
-                    }
-                )
-            }
         }
     }
 
-    /*
-     * Audio Details & Playback Bottom Sheet
-     */
-    if (selectedItem != null) {
-        val item = selectedItem!!
+    // Modal Bottom Sheet for Selected Track Actions
+    if (uiState.selectedTrack != null) {
+        val track = uiState.selectedTrack!!
+        val isCurrentTrackPlaying = currentTrack?.id == track.id
 
         ModalBottomSheet(
-            onDismissRequest = {
-                player.pause()
-                selectedItem = null
-            },
+            onDismissRequest = { viewModel.selectTrack(null) },
             sheetState = sheetState
         ) {
             Column(
@@ -254,28 +264,25 @@ fun LibraryScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Card(
-                        shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer
-                        )
-                    ) {
-                        Text(
-                            text = if (item.isDemo) "📂" else "♫",
-                            style = MaterialTheme.typography.headlineLarge,
-                            modifier = Modifier.padding(16.dp)
-                        )
-                    }
+                    CoverArt(
+                        model = track.artworkUrl,
+                        contentDescription = track.title,
+                        modifier = Modifier.size(64.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    )
 
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = item.title,
+                            text = track.title,
                             style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
 
+                        Spacer(modifier = Modifier.height(2.dp))
+
                         Text(
-                            text = item.subtitle,
+                            text = if (track.isGenerated) "🤖 MoodMix AI Generation" else track.artist,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -284,23 +291,24 @@ fun LibraryScreen(
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                if (playbackDuration > 0L) {
+                if (isCurrentTrackPlaying && duration > 0L) {
                     Slider(
-                        value = playbackPosition.toFloat().coerceIn(0f, playbackDuration.toFloat()),
+                        value = position.toFloat().coerceIn(0f, duration.toFloat()),
                         onValueChange = { newPos ->
-                            player.seekTo(newPos.toLong())
-                            playbackPosition = newPos.toLong()
+                            PlayerController.seekTo(newPos.toLong())
                         },
-                        valueRange = 0f..playbackDuration.toFloat(),
+                        valueRange = 0f..duration.toFloat(),
                         modifier = Modifier.fillMaxWidth()
                     )
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(formatTime(playbackPosition), style = MaterialTheme.typography.bodySmall)
-                        Text(formatTime(playbackDuration), style = MaterialTheme.typography.bodySmall)
+                        Text(formatTime(position), style = MaterialTheme.typography.bodySmall)
+                        Text(formatTime(duration), style = MaterialTheme.typography.bodySmall)
                     }
+
                     Spacer(modifier = Modifier.height(14.dp))
                 }
 
@@ -310,36 +318,43 @@ fun LibraryScreen(
                 ) {
                     Button(
                         onClick = {
-                            if (player.isPlaying) {
-                                player.pause()
+                            if (isCurrentTrackPlaying) {
+                                PlayerController.togglePlay()
                             } else {
-                                player.play()
+                                viewModel.playTrack(track, displayTracks)
                             }
                         },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(14.dp)
                     ) {
-                        Text(if (isPlaying) "Pause" else "▶ Play Audio")
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = if (isCurrentTrackPlaying && isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.size(6.dp))
+                            Text(if (isCurrentTrackPlaying && isPlaying) "Pause" else "Play Track")
+                        }
                     }
 
-                    if (item.file != null && item.file.exists()) {
-                        OutlinedButton(
-                            onClick = { shareAudioFile(context, item.file) },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(14.dp)
-                        ) {
-                            Text("Share File")
-                        }
-                    } else {
+                    if (track.isGenerated && track.audioUri.startsWith("file:/")) {
                         OutlinedButton(
                             onClick = {
-                                player.pause()
-                                selectedItem = null
+                                try {
+                                    val file = File(Uri.parse(track.audioUri).path ?: "")
+                                    if (file.exists()) {
+                                        shareAudioFile(context, file)
+                                    } else {
+                                        Toast.makeText(context, "Audio file not found locally.", Toast.LENGTH_SHORT).show()
+                                    }
+                                } catch (_: Exception) {
+                                }
                             },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(14.dp)
                         ) {
-                            Text("Close")
+                            Text("Share File")
                         }
                     }
                 }
@@ -348,87 +363,6 @@ fun LibraryScreen(
             }
         }
     }
-}
-
-@Composable
-private fun LibraryRowItem(
-    item: LibraryAudioItem,
-    onClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = if (item.isDemo) "📂" else "♫",
-                style = MaterialTheme.typography.headlineSmall
-            )
-
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(start = 14.dp)
-            ) {
-                Text(
-                    text = item.title,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    text = item.subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            if (item.isDemo) {
-                Text(
-                    text = "DEMO",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-    }
-}
-
-private fun loadGeneratedAudioFiles(context: Context): List<LibraryAudioItem> {
-    val items = mutableListOf<LibraryAudioItem>()
-    val dateFormat = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
-
-    val audioDir = File(context.cacheDir, "generated_audio")
-    if (audioDir.exists()) {
-        val files = audioDir.listFiles { _, name -> name.endsWith(".wav") || name.endsWith(".mp3") }
-            ?.sortedByDescending { it.lastModified() }
-            .orEmpty()
-
-        for (file in files) {
-            if (file.length() > 0L) {
-                val dateStr = dateFormat.format(Date(file.lastModified()))
-                val sizeKb = file.length() / 1024
-                items.add(
-                    LibraryAudioItem(
-                        title = file.name,
-                        subtitle = "Generated • $dateStr • ${sizeKb}KB",
-                        file = file,
-                        isDemo = false
-                    )
-                )
-            }
-        }
-    }
-
-    return items
 }
 
 private fun shareAudioFile(context: Context, file: File) {

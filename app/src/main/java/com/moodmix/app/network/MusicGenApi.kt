@@ -18,18 +18,14 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /**
- * Service for communicating with the MoodMix backend music & lyrics generation model.
+ * Production Service for communicating with the MoodMix backend music & lyrics generation server.
+ * Deployed backend URL: https://moodmix-backend.onrender.com
  */
 object MusicGenApi {
 
-    /**
-     * Toggle flag for testing UI flow without a live server.
-     * Managed by [ApiConfig.USE_MOCK_DATA].
-     */
-    const val USE_MOCK_DATA = ApiConfig.USE_MOCK_DATA
-
     /*
      * OkHttpClient configured using central settings from [ApiConfig].
+     * Includes extended timeouts to handle Render free instance cold starts and Daydream model generation.
      */
     private val client = OkHttpClient.Builder()
         .connectTimeout(ApiConfig.CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
@@ -39,6 +35,23 @@ object MusicGenApi {
         .build()
 
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
+
+    /**
+     * Health check endpoint to verify backend connectivity (e.g. Render server readiness).
+     */
+    suspend fun checkHealth(): Boolean = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val request = Request.Builder()
+                .url(ApiConfig.HEALTH_ENDPOINT)
+                .get()
+                .build()
+            client.newCall(request).execute().use { response ->
+                response.isSuccessful
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
 
     /**
      * Backward-compatible generate method.
@@ -63,85 +76,33 @@ object MusicGenApi {
     }
 
     /**
-     * Detailed generation method returning [MusicGenerationResult]
+     * Production generation method returning [MusicGenerationResult]
      * which contains the local audio [File], generated lyrics text (if any), and metadata.
+     * Communicates with backend endpoints and provides real-time status updates.
      */
     suspend fun generateWithDetails(
         context: Context,
         request: MusicGenerationRequest,
+        onStatusUpdate: ((String) -> Unit)? = null
     ): MusicGenerationResult = withContext(Dispatchers.IO) {
 
-        if (USE_MOCK_DATA) {
-            // Simulate AI model generation latency
-            delay(1500)
+        onStatusUpdate?.invoke("Connecting to server...")
 
-            val promptSnippet = request.prompt.trim()
-                .take(25)
-                .replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
-
-            val mockTitle = if (promptSnippet.isNotBlank()) {
-                "MoodMix - $promptSnippet"
-            } else {
-                "MoodMix - Midnight Vibes"
-            }
-
-            val mockLyrics = if (request.generateLyrics) {
-                """
-                [Verse 1]
-                Walking through the quiet neon lights,
-                Whispering thoughts into the midnight skies.
-                Searching for the rhythm in the quiet sound,
-                Lost in the music that we finally found.
-
-                [Chorus]
-                Oh, MoodMix playing soft and low,
-                Feel the wave and let it flow.
-                Underneath the starlight glow,
-                This is the vibe we know.
-
-                [Verse 2]
-                A sudden melody floating through the air,
-                Harmonies turning around every care.
-                Beat drops softly like autumn rain,
-                Washing away the stress and pain.
-
-                [Outro]
-                Fading out into the night...
-                """.trimIndent()
-            } else {
-                null
-            }
-
-            val mockAudioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
-
-            val audioFile = try {
-                downloadAudioFile(context, mockAudioUrl)
-            } catch (_: Exception) {
-                createDummyWavFile(context)
-            }
-
-            return@withContext MusicGenerationResult(
-                audioFile = audioFile,
-                lyrics = mockLyrics,
-                songTitle = mockTitle,
-                rawResponse = MusicGenerationResponse(
-                    status = "success",
-                    songTitle = mockTitle,
-                    audioUrl = mockAudioUrl,
-                    lyrics = mockLyrics,
-                    message = "Mock generation completed successfully.",
-                )
-            )
-        }
+        val cleanPrompt = request.prompt.trim().take(400)
 
         val json = JSONObject().apply {
-            put("prompt", request.prompt)
+            put("prompt", cleanPrompt)
             put("max_new_tokens", request.maxNewTokens)
             put("generate_lyrics", request.generateLyrics)
             if (!request.genre.isNullOrBlank()) {
                 put("genre", request.genre)
             }
+            if (request.bpm != null) {
+                put("bpm", request.bpm.coerceIn(60, 200))
+            }
         }
+
+        onStatusUpdate?.invoke("Submitting request...")
 
         val requestBody = json.toString().toRequestBody(jsonMediaType)
 
@@ -154,10 +115,18 @@ object MusicGenApi {
 
             if (!response.isSuccessful) {
                 val serverMessage = response.body?.string().orEmpty()
-                throw IOException(
-                    "Server returned ${response.code}" +
-                            if (serverMessage.isNotBlank()) ": $serverMessage" else ""
-                )
+                val friendlyError = when (response.code) {
+                    400 -> "HTTP 400 Bad Request: Invalid prompt or parameters."
+                    401 -> "HTTP 401 Unauthorized: Daydream API key rejected by backend server."
+                    402 -> "HTTP 402 Payment Required: Insufficient Daydream credits on backend."
+                    429 -> "HTTP 429 Rate Limit Exceeded: Too many generation requests sent."
+                    500 -> "HTTP 500 Internal Server Error: Backend server error."
+                    502 -> "HTTP 502 Bad Gateway: Daydream upstream model failed."
+                    503 -> "HTTP 503 Service Unavailable: Daydream temporarily unavailable."
+                    504 -> "HTTP 504 Gateway Timeout: Daydream generation request timed out."
+                    else -> "Server returned HTTP ${response.code}" + if (serverMessage.isNotBlank()) ": $serverMessage" else ""
+                }
+                throw IOException(friendlyError)
             }
 
             val responseBody = response.body
@@ -169,44 +138,52 @@ object MusicGenApi {
                 val jsonStr = responseBody.string()
                 val jsonObject = JSONObject(jsonStr)
 
-                val status = jsonObject.optString("status", "success")
+                val status = jsonObject.optString("status", "queued")
+                val songId = if (jsonObject.has("song_id")) jsonObject.optString("song_id")
+                             else if (jsonObject.has("id")) jsonObject.optString("id") else null
                 val songTitle = if (jsonObject.has("song_title")) jsonObject.optString("song_title")
                                 else if (jsonObject.has("title")) jsonObject.optString("title") else null
                 val lyrics = if (jsonObject.has("lyrics")) jsonObject.optString("lyrics")
                              else if (jsonObject.has("lyrics_text")) jsonObject.optString("lyrics_text") else null
-                val audioUrl = if (jsonObject.has("audio_url")) jsonObject.optString("audio_url")
-                               else if (jsonObject.has("audioUrl")) jsonObject.optString("audioUrl") else null
+                val audioUrl = parseAudioUrlFromResponse(jsonObject)
                 val message = if (jsonObject.has("message")) jsonObject.optString("message") else null
 
                 val parsedResponse = MusicGenerationResponse(
                     status = status,
+                    songId = songId,
                     songTitle = songTitle,
                     audioUrl = audioUrl,
                     lyrics = lyrics,
                     message = message,
                 )
 
-                val outputFile: File = if (!audioUrl.isNullOrBlank()) {
+                if (!audioUrl.isNullOrBlank()) {
+                    onStatusUpdate?.invoke("Downloading audio...")
                     val fullAudioUrl = if (audioUrl.startsWith("http://") || audioUrl.startsWith("https://")) {
                         audioUrl
                     } else {
                         "${ApiConfig.BASE_URL.removeSuffix("/")}/${audioUrl.removePrefix("/")}"
                     }
-                    downloadAudioFile(context, fullAudioUrl)
+                    val outputFile = downloadAudioFile(context, fullAudioUrl)
+                    onStatusUpdate?.invoke("Completed")
+                    MusicGenerationResult(
+                        audioFile = outputFile,
+                        lyrics = lyrics,
+                        songTitle = songTitle,
+                        rawResponse = parsedResponse,
+                    )
+                } else if (!songId.isNullOrBlank()) {
+                    // Poll status endpoint for asynchronous generation
+                    pollDaydreamStatus(context, songId, onStatusUpdate, lyrics, songTitle, parsedResponse)
                 } else {
-                    throw IOException("Server returned JSON response without an audio URL.")
+                    throw IOException("Server returned JSON response without an audio_url or song_id.")
                 }
 
-                MusicGenerationResult(
-                    audioFile = outputFile,
-                    lyrics = lyrics,
-                    songTitle = songTitle,
-                    rawResponse = parsedResponse,
-                )
-
             } else {
-                // Direct binary audio stream (WAV/MP3/AAC)
+                // Direct binary audio stream (WAV/MP3)
+                onStatusUpdate?.invoke("Downloading audio...")
                 val outputFile = saveStreamToFile(context, responseBody)
+                onStatusUpdate?.invoke("Completed")
                 MusicGenerationResult(
                     audioFile = outputFile,
                 )
@@ -215,23 +192,110 @@ object MusicGenApi {
     }
 
     /**
-     * Fetch song recommendations from `POST /recommendations`
+     * Poll backend status endpoint `GET /status/{song_id}` until completed or failed.
+     */
+    private suspend fun pollDaydreamStatus(
+        context: Context,
+        songId: String,
+        onStatusUpdate: ((String) -> Unit)?,
+        initialLyrics: String?,
+        initialTitle: String?,
+        initialResponse: MusicGenerationResponse
+    ): MusicGenerationResult = withContext(Dispatchers.IO) {
+        val statusUrl = "${ApiConfig.STATUS_ENDPOINT}/$songId"
+
+        for (attempt in 1..150) { // Poll for up to 5 minutes (every 2s)
+            val request = Request.Builder().url(statusUrl).get().build()
+
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    val serverMessage = response.body?.string().orEmpty()
+                    val friendlyError = when (response.code) {
+                        400 -> "HTTP 400 Bad Request: Invalid status request."
+                        401 -> "HTTP 401 Unauthorized: Daydream API key rejected."
+                        402 -> "HTTP 402 Payment Required: Daydream API credits exhausted."
+                        429 -> "HTTP 429 Rate Limit Exceeded: Too many status requests."
+                        500 -> "HTTP 500 Internal Server Error: Status check failed."
+                        502 -> "HTTP 502 Bad Gateway: Upstream status failure."
+                        503 -> "HTTP 503 Service Unavailable: Daydream temporarily unavailable."
+                        504 -> "HTTP 504 Gateway Timeout: Status check timed out."
+                        else -> "Status check returned HTTP ${response.code}: $serverMessage"
+                    }
+                    throw IOException(friendlyError)
+                }
+
+                val body = response.body ?: throw IOException("Empty status response from server.")
+                val jsonStr = body.string()
+                val jsonObject = JSONObject(jsonStr)
+
+                val status = jsonObject.optString("status", "queued").lowercase()
+                val audioUrl = parseAudioUrlFromResponse(jsonObject)
+                val lyrics = if (jsonObject.has("lyrics")) jsonObject.optString("lyrics") else initialLyrics
+                val songTitle = if (jsonObject.has("song_title")) jsonObject.optString("song_title") else initialTitle
+
+                when (status) {
+                    "queued" -> onStatusUpdate?.invoke("Waiting in queue...")
+                    "processing", "generating", "in_progress" -> onStatusUpdate?.invoke("Generating music...")
+                    "completed", "success" -> {
+                        if (!audioUrl.isNullOrBlank()) {
+                            onStatusUpdate?.invoke("Downloading audio...")
+                            val fullAudioUrl = if (audioUrl.startsWith("http://") || audioUrl.startsWith("https://")) {
+                                audioUrl
+                            } else {
+                                "${ApiConfig.BASE_URL.removeSuffix("/")}/${audioUrl.removePrefix("/")}"
+                            }
+                            val file = downloadAudioFile(context, fullAudioUrl)
+                            onStatusUpdate?.invoke("Completed")
+                            return@withContext MusicGenerationResult(
+                                audioFile = file,
+                                lyrics = lyrics,
+                                songTitle = songTitle,
+                                rawResponse = initialResponse.copy(status = "completed", audioUrl = audioUrl)
+                            )
+                        } else {
+                            throw IOException("Generation status completed but no audio URL was returned.")
+                        }
+                    }
+                    "failed", "error" -> {
+                        val errorMsg = jsonObject.optString("error", jsonObject.optString("message", "Generation failed on backend model."))
+                        throw IOException("Generation Failed: $errorMsg")
+                    }
+                }
+            }
+
+            delay(2000)
+        }
+
+        throw IOException("Generation status polling timed out after 5 minutes.")
+    }
+
+    private fun parseAudioUrlFromResponse(jsonObject: JSONObject): String? {
+        if (jsonObject.has("mp3_url") && !jsonObject.isNull("mp3_url")) return jsonObject.optString("mp3_url")
+        if (jsonObject.has("wav_url") && !jsonObject.isNull("wav_url")) return jsonObject.optString("wav_url")
+        if (jsonObject.has("audio_url") && !jsonObject.isNull("audio_url")) return jsonObject.optString("audio_url")
+        if (jsonObject.has("audioUrl") && !jsonObject.isNull("audioUrl")) return jsonObject.optString("audioUrl")
+        
+        // Handle nested takes array if Daydream returns takes structure
+        if (jsonObject.has("takes")) {
+            val takesArray = jsonObject.optJSONArray("takes")
+            if (takesArray != null && takesArray.length() > 0) {
+                val firstTake = takesArray.optJSONObject(0)
+                if (firstTake != null) {
+                    if (firstTake.has("mp3_url")) return firstTake.optString("mp3_url")
+                    if (firstTake.has("wav_url")) return firstTake.optString("wav_url")
+                    if (firstTake.has("audio_url")) return firstTake.optString("audio_url")
+                }
+            }
+        }
+        return null
+    }
+
+    /**
+     * Fetch song recommendations from backend `POST /recommendations`
      */
     suspend fun fetchRecommendations(
         genre: String? = null
     ): RecommendationsResponse = withContext(Dispatchers.IO) {
-        if (USE_MOCK_DATA) {
-            delay(800)
-            return@withContext RecommendationsResponse(
-                status = "success",
-                tracks = listOf(
-                    RecommendationTrack("Daily Mix 1", "MoodMix AI", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"),
-                    RecommendationTrack("Focus Flow", "Lo-Fi Collective", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3"),
-                    RecommendationTrack("Late Night Beats", "Chillout Zone", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3")
-                )
-            )
-        }
-
         val json = JSONObject().apply {
             if (!genre.isNullOrBlank()) put("genre", genre)
         }
@@ -242,7 +306,7 @@ object MusicGenApi {
 
         client.newCall(httpRequest).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("Server returned ${response.code}")
+                throw IOException("Backend recommendations service returned HTTP ${response.code}")
             }
             val bodyStr = response.body?.string() ?: throw IOException("Empty response")
             val jsonObj = JSONObject(bodyStr)
@@ -266,19 +330,11 @@ object MusicGenApi {
     }
 
     /**
-     * Voice Search Speech-to-Text via `POST /voice-search` (Multipart upload)
+     * Voice Search Speech-to-Text via backend `POST /voice-search` (Multipart upload)
      */
     suspend fun performVoiceSearch(
         audioFile: File
     ): VoiceSearchResponse = withContext(Dispatchers.IO) {
-        if (USE_MOCK_DATA) {
-            delay(1500)
-            return@withContext VoiceSearchResponse(
-                status = "success",
-                recognizedText = "Chill lo-fi study music for late night"
-            )
-        }
-
         val requestBody = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
             .addFormDataPart("audio", audioFile.name, audioFile.asRequestBody("audio/*".toMediaType()))
@@ -291,7 +347,7 @@ object MusicGenApi {
 
         client.newCall(httpRequest).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("Voice search failed with code ${response.code}")
+                throw IOException("Voice search service returned HTTP ${response.code}")
             }
             val bodyStr = response.body?.string() ?: throw IOException("Empty response")
             val jsonObj = JSONObject(bodyStr)
@@ -304,22 +360,11 @@ object MusicGenApi {
     }
 
     /**
-     * Song Analysis & Breakdown via `POST /analyze-song` (Multipart upload)
+     * Song Analysis & Breakdown via backend `POST /analyze-song` (Multipart upload)
      */
     suspend fun analyzeSong(
         audioFile: File
     ): SongAnalysisResponse = withContext(Dispatchers.IO) {
-        if (USE_MOCK_DATA) {
-            delay(1200)
-            return@withContext SongAnalysisResponse(
-                status = "success",
-                bpm = 120,
-                keySignature = "C Major",
-                energyLevel = 0.84f,
-                primaryMood = "Energetic & Upbeat"
-            )
-        }
-
         val requestBody = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
             .addFormDataPart("audio", audioFile.name, audioFile.asRequestBody("audio/*".toMediaType()))
@@ -332,7 +377,7 @@ object MusicGenApi {
 
         client.newCall(httpRequest).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("Song analysis failed with code ${response.code}")
+                throw IOException("Song analysis service returned HTTP ${response.code}")
             }
             val bodyStr = response.body?.string() ?: throw IOException("Empty response")
             val jsonObj = JSONObject(bodyStr)
@@ -347,21 +392,11 @@ object MusicGenApi {
     }
 
     /**
-     * Lyrics Intelligence via `POST /lyrics-intelligence`
+     * Lyrics Intelligence via backend `POST /lyrics-intelligence`
      */
     suspend fun analyzeLyrics(
         request: LyricsIntelligenceRequest
     ): LyricsIntelligenceResponse = withContext(Dispatchers.IO) {
-        if (USE_MOCK_DATA) {
-            delay(1000)
-            return@withContext LyricsIntelligenceResponse(
-                status = "success",
-                sentiment = "Highly Positive & Uplifting",
-                rhymeScheme = "AABB AA",
-                summary = "Themes of freedom, music energy, and late night reflection."
-            )
-        }
-
         val json = JSONObject().apply {
             put("lyrics_text", request.lyricsText)
             put("action", request.action)
@@ -374,7 +409,7 @@ object MusicGenApi {
 
         client.newCall(httpRequest).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("Lyrics analysis failed with code ${response.code}")
+                throw IOException("Lyrics intelligence service returned HTTP ${response.code}")
             }
             val bodyStr = response.body?.string() ?: throw IOException("Empty response")
             val jsonObj = JSONObject(bodyStr)
@@ -388,32 +423,12 @@ object MusicGenApi {
     }
 
     /**
-     * AI DJ & Smart Transitions via `POST /ai-dj`
+     * AI DJ & Smart Transitions via backend `POST /ai-dj`
      */
     suspend fun generateAiDjTransition(
         context: Context,
         request: AiDjRequest
     ): MusicGenerationResult = withContext(Dispatchers.IO) {
-        if (USE_MOCK_DATA) {
-            delay(1200)
-            val sampleUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
-            val file = try {
-                downloadAudioFile(context, sampleUrl)
-            } catch (_: Exception) {
-                createDummyWavFile(context)
-            }
-            return@withContext MusicGenerationResult(
-                audioFile = file,
-                songTitle = "AI DJ Crossfade Transition",
-                rawResponse = MusicGenerationResponse(
-                    status = "success",
-                    songTitle = "AI DJ Transition",
-                    audioUrl = sampleUrl,
-                    message = "AI DJ transition generated successfully."
-                )
-            )
-        }
-
         val json = JSONObject().apply {
             put("track_a", request.trackAUrl)
             put("track_b", request.trackBUrl)
@@ -427,7 +442,7 @@ object MusicGenApi {
 
         client.newCall(httpRequest).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("AI DJ service failed with code ${response.code}")
+                throw IOException("AI DJ service returned HTTP ${response.code}")
             }
             val body = response.body ?: throw IOException("Empty response")
             val contentType = body.contentType()?.toString()?.lowercase().orEmpty()
@@ -471,9 +486,13 @@ object MusicGenApi {
             outputDirectory.mkdirs()
         }
 
+        val contentTypeStr = responseBody.contentType()?.toString()?.lowercase().orEmpty()
+        val isMp3 = contentTypeStr.contains("mpeg") || contentTypeStr.contains("mp3")
+        val extension = if (isMp3) "mp3" else "wav"
+
         val outputFile = File(
             outputDirectory,
-            "MoodMix_${System.currentTimeMillis()}.wav"
+            "MoodMix_${System.currentTimeMillis()}.$extension"
         )
 
         responseBody.byteStream().use { input ->
@@ -486,16 +505,6 @@ object MusicGenApi {
             throw IOException("The generated audio file is empty.")
         }
 
-        return outputFile
-    }
-
-    private fun createDummyWavFile(context: Context): File {
-        val outputDirectory = File(context.cacheDir, "generated_audio")
-        if (!outputDirectory.exists()) {
-            outputDirectory.mkdirs()
-        }
-        val outputFile = File(outputDirectory, "MoodMix_mock_${System.currentTimeMillis()}.wav")
-        outputFile.writeBytes(ByteArray(1024))
         return outputFile
     }
 }

@@ -1,58 +1,77 @@
 package com.moodmix.app.ui.theme
 
-import android.app.Activity
-import android.os.Build
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
+import com.moodmix.app.domain.model.OccasionType
+import com.moodmix.app.domain.model.RegionalThemeState
 
-private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80
+private val MoodMixDarkColorScheme = darkColorScheme(
+    primary = MintPrimary,
+    onPrimary = BackgroundDark,
+    primaryContainer = Color(0xFF243310),
+    onPrimaryContainer = MintPrimary,
+    secondary = BrandPurpleAccent,
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFF33173A),
+    onSecondaryContainer = BrandPurpleAccent,
+    tertiary = MintPrimaryDark,
+    onTertiary = BackgroundDark,
+    background = BackgroundDark,
+    onBackground = TextPrimary,
+    surface = SurfaceDark,
+    onSurface = TextPrimary,
+    surfaceVariant = SurfaceVariantDark,
+    onSurfaceVariant = TextSecondary,
+    outline = CardBorder,
+    error = ErrorRed,
+    onError = Color.White,
+    surfaceTint = MintPrimary
 )
 
-private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40
-
-    /* Other default colors to override
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
-    onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-    */
+private val DiwaliColorScheme = darkColorScheme(
+    primary = DiwaliGold,
+    onPrimary = BackgroundDark,
+    primaryContainer = Color(0xFF4E3800),
+    onPrimaryContainer = DiwaliGold,
+    secondary = DiwaliOrange,
+    onSecondary = BackgroundDark,
+    secondaryContainer = Color(0xFF4E2200),
+    onSecondaryContainer = DiwaliOrange,
+    tertiary = DiwaliWarmPink,
+    onTertiary = BackgroundDark,
+    background = BackgroundDark,
+    onBackground = TextPrimary,
+    surface = SurfaceDark,
+    onSurface = TextPrimary,
+    surfaceVariant = SurfaceVariantDark,
+    onSurfaceVariant = TextSecondary,
+    outline = CardBorder,
+    error = ErrorRed,
+    onError = Color.White,
+    surfaceTint = DiwaliGold
 )
 
 @Composable
 fun MoodMixTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = true,
+    regionalThemeState: RegionalThemeState = RegionalThemeState(),
     content: @Composable () -> Unit
 ) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+    val activeColorScheme = when {
+        regionalThemeState.isFestiveActive -> {
+            when (regionalThemeState.activeOccasion?.type) {
+                OccasionType.DIWALI -> DiwaliColorScheme
+                else -> MoodMixDarkColorScheme
+            }
         }
-
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
+        else -> MoodMixDarkColorScheme
     }
 
     MaterialTheme(
-        colorScheme = colorScheme,
+        colorScheme = activeColorScheme,
         typography = Typography,
+        shapes = Shapes,
         content = content
     )
 }

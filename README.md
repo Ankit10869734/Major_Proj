@@ -1,329 +1,187 @@
-# MoodMix
+# 🎵 MoodMix — AI Music Intelligence & Regional Adaptation Android App
 
-MoodMix is an Android application built with Kotlin and Jetpack Compose for music generation, lyrics generation, and audio-related tools.
+Welcome to the **MoodMix** repository! MoodMix is a modern native Android application built with **Kotlin**, **Jetpack Compose Material 3**, and **Media3 / ExoPlayer** designed for AI-driven music generation, streaming discovery, lyrics intelligence, audio DSP analysis, and seasonal regional theme adaptation.
 
-The project includes the Android frontend and API client used to connect the app to backend services running ML inference pipelines. This document covers the app architecture, development setup, server configuration, and API contracts for backend integration.
+This project includes the Android frontend, backend API server integration, model integration adapter framework, and Kaggle notebook Qwen LLM service.
 
-## Overview
+---
 
-The application is organized into four main sections:
+## 📌 1. Project Overview & Features
 
-- **Home** — music recommendations and discovery.
-- **Generate** — music and lyrics generation.
-- **Tools** — voice search, song analysis, lyrics analysis, and AI DJ transitions.
-- **Library** — access to generated and saved audio.
+### Core App Workspaces
 
-The Android application handles the UI, network requests, audio playback, local audio caching, downloads, and file sharing. The backend is responsible for model inference and the API endpoints that expose those capabilities.
+1. **🌐 Discover (Home)**:
+   - Dynamic greetings and time-of-day contextual AI music recommendation prompts.
+   - Streaming discovery feed powered by Apple Music RSS APIs (Recently Played, Trending Songs, Popular Artists, New Releases, Featured Playlists).
+   - **Tab Navigation State Preservation**: Prevents unnecessary page wipes, loading shimmers, and duplicate API requests when switching between tabs.
+   - **Regional & Festive Theme Adaptation**: Automatically detects device locale or manual region selection (India, United States, Germany, Japan, Standard Dark).
+   - **Lunisolar Diwali Festival Theme**: Features exact Indian Standard Time (`Asia/Kolkata`) Diwali dates (2024–2030) derived from official Drik Panchang astronomical calculations, dynamically applying WCAG 2.2 AA-compliant Gold (`#FFD700`), Amber-Orange (`#FF8F00`), and Festive Pink (`#FF6584`) color palettes.
 
-## Architecture
+2. **🔍 Search (Natural Language & Voice Integration)**:
+   - Live music catalogue search across songs, artists, and albums with filter chips (All, Songs, Artists, Albums).
+   - **Voice Search Microphone Integration**: Embedded microphone button (`mic`) inside the search bar.
+   - **Integrated Speech-to-Text**: Transcribes spoken song or artist queries using Android `SpeechRecognizer` with offline model support (`RecognizerIntent.EXTRA_PREFER_OFFLINE`).
+   - **Natural Language Query Interpretation**: Qwen LLM interprets complex search queries (e.g. *"can you find soft acoustic songs for studying"*) into targeted keywords before executing catalogue lookup.
+   - **Editable Transcript**: Speech transcripts can be reviewed and edited in the query box before or after submitting.
 
-```text
-+------------------+       +-----------------------+       +----------------------+
-| Jetpack Compose  | ----> | MusicGenApi            | ----> | OkHttpClient         |
-| UI screens       |       | Coroutines / IO        |       | HTTP requests        |
-+------------------+       +-----------------------+       +----------------------+
-         ^                                                         |
-         |                                                         v
-+------------------+       +-----------------------+       +----------------------+
-| ExoPlayer        | <---- | Local audio cache      | <---- | Backend HTTP server  |
-| Playback         |       | Generated audio files |       | Flask / FastAPI      |
-+------------------+       +-----------------------+       +----------------------+
+3. **🤖 Create (AI Music Generation)**:
+   - Full AI Music Creation Workspace available in both Debug and Release builds.
+   - User text prompt input (up to 400 characters), duration slider (5–30 seconds), and AI lyrics generator toggle.
+   - **Backend Integration**: Communicates with the MoodMix FastAPI backend server (`POST /generate` and `POST /api/v2/generate`).
+   - **Teammate Model Integration Layer**: Supports model-agnostic adapters (`BaseMusicModelAdapter`) for Magenta, PyTorch, and custom teammate music generation models.
+   - Audio export to Android device storage (`Music/MoodMix/`) via MediaStore APIs.
+
+4. **💬 Extras (AI Tools & Intelligence)**:
+   - **Song Analysis & Breakdown**: On-device audio DSP analyzer (`AudioAnalyzer`) computing tempo (BPM), key signature, energy curve, loudness (dBFS), and segment boundaries from local audio files, enriched with Qwen LLM musical interpretation.
+   - **Lyrics Intelligence**: On-device lyrics structure, sentiment, and rhyme scheme analyzer paired with **On-Device ML Kit Translation** (12+ languages) and **Qwen LLM Lyrics Analysis**.
+   - **AI DJ & Smart Transitions**: On-device BPM tempo matching, crossfade auditioning (Smooth, Linear, Quick Cut), and Qwen transition vibe commentary.
+   - **Regional Theme & Occasions Selector**: Toggle automatic theme adaptation or force specific manual region overrides.
+
+5. **📚 Library & Listening Insights**:
+   - Organized tabs for All Tracks, Saved AI Creations, Liked Songs, and Recently Played History.
+   - **🤖 Qwen Listening Insights Banner**: Analyzes actual saved titles and artists in user history to generate personalized listening habit summaries (*"Your recent activity shows a preference for lo-fi beats, ambient piano, and pop hits."*).
+   - Track detail bottom sheet for playback, seeking, liking, and system file sharing.
+
+6. **🎧 Media3 Playback & Service Lifecycle**:
+   - Foreground `MediaSessionService` (`PlaybackService.kt`) with lock screen controls and system notification.
+   - **Mini-Player Close (X) Button**: Dismisses playback, clears media queue, and removes system notifications immediately.
+   - **Android `onTaskRemoved()` Recents Swipe Cleanup**: Swiping MoodMix away from Android Recent Apps cleanly stops playback, removes notifications, and terminates the service.
+
+---
+
+## 🏗️ 2. Architecture & Tech Stack
+
+```
++-----------------------------------------------------------------------+
+|                       Jetpack Compose UI Layer                        |
+|   HomeScreen  |  SearchScreen  |  GenerateScreen  |  LibraryScreen   |
++-----------------------------------------------------------------------+
+                                   | (StateFlow / Coroutines)
++-----------------------------------------------------------------------+
+|                           ViewModels Layer                            |
+| HomeViewModel | SearchViewModel | GenerateViewModel | LibraryViewModel|
++-----------------------------------------------------------------------+
+                                   |
++-----------------------------------------------------------------------+
+|                         Data & Service Layer                          |
+| MusicRepository | QwenApi | RegionalThemePreferences | PlaybackService|
++-----------------------------------------------------------------------+
+        |                          |                        |
+        v                          v                        v
++---------------+        +------------------+     +------------------+
+| Apple RSS API |        |  Qwen LLM API    |     |  FastAPI Server  |
+| (Discover)    |        |  (Kaggle / ngrok)|     |  (Render ML)     |
++---------------+        +------------------+     +------------------+
 ```
 
-The frontend uses Kotlin Coroutines and OkHttp to perform network operations off the main thread. Generated audio is cached locally and played through AndroidX Media3 ExoPlayer.
+### Core Technologies
 
-### Responsibilities
+- **Language**: Kotlin 100%
+- **UI Toolkit**: Jetpack Compose with Material 3 Design System
+- **Architecture Pattern**: MVVM (Model-View-ViewModel) + Unidirectional Data Flow
+- **State Management**: Kotlin Coroutines & `StateFlow`
+- **Audio Playback Engine**: AndroidX `Media3` ExoPlayer 1.11.1 & `MediaSessionService`
+- **Networking**: OkHttp 4.12.0
+- **On-Device ML**: Google ML Kit Translation (`com.google.mlkit:translate`) & Language Identification (`com.google.mlkit:language-id`)
+- **Remote LLM**: Qwen2.5-Omni-3B hosted on Kaggle GPU / ngrok
+- **Image Loading**: Coil 3 (`io.coil-kt.coil3`)
+- **Color Extraction**: AndroidX Palette (`androidx.palette:palette-ktx`)
+- **Persistence**: AndroidX DataStore Preferences (`androidx.datastore:datastore-preferences`)
 
-**Android frontend**
-- Jetpack Compose UI with Material 3.
-- Audio playback and progress seeking through Media3 ExoPlayer.
-- Local WAV caching, downloads to `Music/MoodMix`, and system file sharing.
-- Runtime permission handling for `RECORD_AUDIO`.
-- Native file selection for audio files using `audio/*`.
-- HTTP communication with the backend.
+---
 
-**Backend**
-- Hosting and running ML inference pipelines, including MusicGen, speech recognition, and lyrics-related models.
-- Exposing REST endpoints for generation, recommendations, speech recognition, audio analysis, lyrics intelligence, and AI DJ transitions.
-- Returning audio streams or structured JSON responses.
-- Maintaining API availability, tunnel configuration, and response latency.
+## 📦 3. APK & Build Optimizations
 
-## Development setup
+The application underwent rigorous build and packaging optimization:
 
-### Requirements
+| Metric | Debug APK | Release APK | Release AAB | Size Reduction | Reduction % |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Total Size** | **142.59 MB** | **24.19 MB** | **16.13 MB** | **-118.40 MB** | **-83.0%** |
+| **Native Libraries (`lib/`)** | 63.90 MB | **16.59 MB** | ~16.59 MB | **-47.31 MB** | **-74.0%** |
+| **Compiled DEX Files** | 71.90 MB | **5.26 MB** | ~5.26 MB | **-66.64 MB** | **-92.7%** |
+| **Packaged ABIs** | 4 ABIs | **1 (`arm64-v8a` only)** | **1 (`arm64-v8a` only)** | **-3 ABIs** | **-75.0%** |
 
-| Component | Version / configuration |
-|---|---|
-| IDE | Android Studio Quail (2026.1.4) or newer |
-| Gradle runtime JDK | JDK 17 |
-| Java source/target compatibility | Java 11 (`JavaVersion.VERSION_11`) |
-| Compile SDK | 37 |
-| Minimum SDK | 29 |
-| Target SDK | 37 |
+### Release Build Configurations (`app/build.gradle.kts`)
+- **Production ABI Filter**: `ndk { abiFilters.add("arm64-v8a") }` filters out `x86`, `x86_64`, and `armeabi-v7a` native libraries in production releases.
+- **R8 Code & Resource Shrinking**: `isMinifyEnabled = true` and `isShrinkResources = true` strip unused classes and resources.
+- **Refined ProGuard Rules**: Preserved serialization DTOs (`com.moodmix.app.domain.model.**`, `com.moodmix.app.network.**`) and Media3 session interfaces while enabling full R8 minification across UI screens.
 
-The Java source and target compatibility settings are configured in `app/build.gradle.kts`. The Gradle runtime JDK is a separate requirement.
+---
 
-### Main dependencies
+## 📡 4. Server & Qwen LLM API Configuration
 
-- Jetpack Compose and Material 3
-- OkHttp 4.12.0
-- AndroidX Media3 ExoPlayer 1.11.1
-- AndroidX Navigation Compose
-- Kotlin Coroutines
+All networking endpoints are centralized in [`ApiConfig.kt`](file:///C:/Users/Blade/AndroidStudioProjects/MoodMix/app/src/main/java/com/moodmix/app/network/ApiConfig.kt):
 
-### Build and run
+```kotlin
+object ApiConfig {
 
-From the project root, build the debug variant:
+    // FastAPI Production Backend
+    const val BASE_URL = "https://moodmix-backend.onrender.com"
 
+    // Qwen LLM Backend (Kaggle / ngrok)
+    const val QWEN_BASE_URL = "https://valiant-program-parched.ngrok-free.dev"
+
+    val QWEN_ANALYZE_ENDPOINT get() = "$QWEN_BASE_URL/analyze"
+    val GENERATE_ENDPOINT get() = "$BASE_URL/generate"
+    val STATUS_ENDPOINT get() = "$BASE_URL/status"
+}
+```
+
+### Qwen LLM Integration Contract (`QwenApi.kt`)
+Communicates with `POST /analyze` passing task-based payloads:
+```json
+{
+  "task": "lyrics_analysis",
+  "content": "your_lyrics_or_prompt_here"
+}
+```
+Includes automatic markdown code fence stripping (`stripMarkdownFences()`) and JSON attribute parsing with **100% on-device fallback resilience** if the remote Qwen server is offline or times out.
+
+---
+
+## 🔒 5. Kaggle Notebook Security & Setup
+
+The Qwen LLM backend is hosted via a Kaggle notebook (`MoodMix_Qwen_Kaggle_Notebook.ipynb`).
+
+### Kaggle Secrets Setup Instructions
+1. Open your notebook in Kaggle.
+2. Go to **Add-ons** $\rightarrow$ **Secrets**.
+3. Click **+ Add a new secret**.
+4. Set **Label**: `NGROK_AUTHTOKEN`, **Value**: Your ngrok token from [dashboard.ngrok.com](https://dashboard.ngrok.com/get-started/your-authtoken).
+5. Check the box to attach `NGROK_AUTHTOKEN` to the notebook session.
+
+See [`NOTEBOOK_SECURITY_CHANGELOG.md`](file:///C:/Users/Blade/AndroidStudioProjects/MoodMix/NOTEBOOK_SECURITY_CHANGELOG.md) for full security documentation.
+
+---
+
+## 🤝 6. Teammate Model Integration Guide
+
+For teammate developers connecting custom PyTorch / Magenta music generation models to MoodMix, see [`MODEL_INTEGRATION.md`](file:///C:/Users/Blade/mood-music/melody-craft/MODEL_INTEGRATION.md).
+
+FastAPI V2 Endpoint: `POST /api/v2/generate`
+- Request: `ModelGenerationRequest` (`prompt`, `genre`, `mood`, `duration`, `model_id`, `user_id`, `extra_params`)
+- Response: `ModelGenerationResponse` (`success`, `track_id`, `audio_url`, `duration`, `format`, `model_id`, `message`)
+
+---
+
+## 🧪 7. Build & Verification Instructions
+
+### Run Unit Tests
+```bash
+./gradlew testDebugUnitTest
+```
+
+### Build Debug APK
 ```bash
 ./gradlew assembleDebug
 ```
 
-On Windows, the equivalent command is:
-
-```powershell
-.\gradlew.bat assembleDebug
-```
-
-To run the app, open the project in Android Studio, sync Gradle, select a device or emulator, and use **Run** (`Shift + F10`).
-
-## Backend configuration
-
-Backend networking settings are defined in:
-
-`app/src/main/java/com/moodmix/app/network/ApiConfig.kt`
-
-The current configuration supports mock data while the backend is under development.
-
-```kotlin
-object ApiConfig {
-    const val USE_MOCK_DATA = true
-
-    const val BASE_URL = "http://YOUR_TEAM_SERVER_IP:8000"
-
-    val GENERATE_ENDPOINT get() = "$BASE_URL/generate"
-    val RECOMMENDATIONS_ENDPOINT get() = "$BASE_URL/recommendations"
-    val VOICE_SEARCH_ENDPOINT get() = "$BASE_URL/voice-search"
-    val SONG_ANALYSIS_ENDPOINT get() = "$BASE_URL/analyze-song"
-    val LYRICS_INTELLIGENCE_ENDPOINT get() = "$BASE_URL/lyrics-intelligence"
-    val AI_DJ_ENDPOINT get() = "$BASE_URL/ai-dj"
-}
-```
-
-Replace `BASE_URL` with the backend server's base URL when a server is available. Set `USE_MOCK_DATA` to `false` when testing against a compatible live backend.
-
-Example base URLs:
-
-| Environment | Base URL |
-|---|---|
-| Android Emulator | `http://10.0.2.2:8000` |
-| Physical device on the same network | `http://192.168.1.50:8000` |
-| Cloudflare Quick Tunnel | `https://YOUR-SUBDOMAIN.trycloudflare.com` |
-
-The addresses above are examples. Use the actual host, port, and tunnel URL for the server being tested.
-
-For a Cloudflare Quick Tunnel, start the tunnel against the local backend server:
-
+### Build Release APK & AAB
 ```bash
-cloudflared tunnel --url http://localhost:8000
+./gradlew assembleRelease
+./gradlew bundleRelease
 ```
-
-Use the HTTPS URL generated by Cloudflare as `BASE_URL`.
-
-## API reference
-
-The following contracts describe the frontend's expected backend interface. Routes marked as scaffolding are proposed integration points and should not be treated as confirmed, working backend endpoints.
-
-| Endpoint | Method | Purpose | Request | Response | Frontend status |
-|---|---|---|---|---|---|
-| `/generate` | POST | Music and lyrics generation | JSON | WAV stream or JSON | Implemented and wired |
-| `/recommendations` | POST | Music recommendations | JSON | JSON | Scaffolding |
-| `/voice-search` | POST | Speech-to-text | Multipart form data | JSON | Scaffolding |
-| `/analyze-song` | POST | Audio feature extraction | Multipart form data | JSON | Scaffolding |
-| `/lyrics-intelligence` | POST | Lyrics analysis | JSON | JSON | Scaffolding |
-| `/ai-dj` | POST | Audio transitions | JSON | Audio URL or JSON | Scaffolding |
-
-### Music generation — `POST /generate`
-
-**Frontend:** `GenerateScreen.kt`
-
-Request body:
-
-```json
-{
-  "prompt": "peaceful lo-fi beat for studying at night",
-  "max_new_tokens": 750,
-  "generate_lyrics": true,
-  "genre": "Lo-Fi"
-}
-```
-
-The backend can return audio in either of the following formats.
-
-**Option A: Audio stream**
-
-- Content type: `audio/wav`
-- Response body: WAV audio bytes.
-
-**Option B: JSON response**
-
-```json
-{
-  "status": "success",
-  "song_title": "MoodMix - Peaceful Lo-Fi",
-  "audio_url": "https://your-server.com/audio/output_123.wav",
-  "lyrics": "[Verse 1]\nWalking under neon lights...\n[Chorus]\nFeel the rhythm low...",
-  "message": "Generation completed"
-}
-```
-
-### Recommendations — `POST /recommendations`
-
-**Frontend:** `HomeScreen.kt`
-
-Request body:
-
-```json
-{
-  "genre": "Lo-Fi"
-}
-```
-
-Response:
-
-```json
-{
-  "status": "success",
-  "tracks": [
-    {
-      "title": "Daily Mix 1",
-      "artist": "MoodMix AI",
-      "audio_url": "https://your-server.com/audio/rec1.mp3"
-    }
-  ]
-}
-```
-
-### Voice search — `POST /voice-search`
-
-**Frontend:** `ToolsScreen.kt`
-
-Request content type: `multipart/form-data`
-
-| Field | Description |
-|---|---|
-| `audio` | Audio file, such as WAV or AAC |
-
-Response:
-
-```json
-{
-  "status": "success",
-  "recognized_text": "chill late night lo-fi beat"
-}
-```
-
-### Song analysis — `POST /analyze-song`
-
-**Frontend:** `ToolsScreen.kt`
-
-Request content type: `multipart/form-data`
-
-| Field | Description |
-|---|---|
-| `audio` | Audio file to analyze |
-
-Response:
-
-```json
-{
-  "status": "success",
-  "bpm": 120,
-  "key_signature": "C Major",
-  "energy_level": 0.84,
-  "primary_mood": "Energetic & Upbeat"
-}
-```
-
-### Lyrics intelligence — `POST /lyrics-intelligence`
-
-**Frontend:** `ToolsScreen.kt`
-
-Request body:
-
-```json
-{
-  "lyrics_text": "Walking through the quiet neon lights...",
-  "action": "analyze"
-}
-```
-
-Response:
-
-```json
-{
-  "status": "success",
-  "sentiment": "Highly Positive & Uplifting",
-  "rhyme_scheme": "AABB AA",
-  "summary": "Themes of music, freedom, and reflection."
-}
-```
-
-### AI DJ transitions — `POST /ai-dj`
-
-**Frontend:** `ToolsScreen.kt`
-
-Request body:
-
-```json
-{
-  "track_a": "https://server.com/audio/a.mp3",
-  "track_b": "https://server.com/audio/b.mp3",
-  "crossfade_seconds": 4
-}
-```
-
-Response:
-
-```json
-{
-  "status": "success",
-  "transition_audio_url": "https://server.com/audio/dj_mix_123.wav"
-}
-```
-
-## Network testing
-
-When testing against a local backend:
-
-- **Android Emulator:** Use `10.0.2.2` to reach the development machine's localhost.
-- **Physical device:** Use the development machine's LAN IP and ensure the firewall allows connections to the backend port.
-- **Cloudflare Tunnel:** Use the generated HTTPS tunnel URL as the base URL.
-
-The backend port in these examples is `8000`. Use the port on which your server actually listens.
-
-## Project structure
-
-```text
-MoodMix/
-├── app/
-│   ├── src/
-│   │   ├── main/
-│   │   │   ├── java/com/moodmix/app/
-│   │   │   │   ├── navigation/
-│   │   │   │   ├── network/
-│   │   │   │   └── ui/screens/
-│   │   │   │       ├── generate/
-│   │   │   │       ├── home/
-│   │   │   │       ├── library/
-│   │   │   │       └── tools/
-│   │   │   └── res/
-│   │   └── test/
-│   └── build.gradle.kts
-├── gradle/
-├── build.gradle.kts
-├── gradle.properties
-├── settings.gradle.kts
-└── README.md
-```
-
+Output artifacts:
+- Debug APK: `app/build/outputs/apk/debug/app-debug.apk`
+- Release APK: `app/build/outputs/apk/release/app-release.apk`
+- Release AAB: `app/build/outputs/bundle/release/app-release.aab`
