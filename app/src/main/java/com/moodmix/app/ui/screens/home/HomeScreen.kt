@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -318,10 +319,10 @@ fun HomeScreen(
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        items(
+                        itemsIndexed(
                             items = content.trendingSongs,
-                            key = { it.id }
-                        ) { track ->
+                            key = { index, track -> "${track.id}_$index" }
+                        ) { _, track ->
                             val isActive = (track.id == currentTrackId)
                             TrackCard(
                                 title = track.title,
@@ -343,10 +344,10 @@ fun HomeScreen(
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        items(
+                        itemsIndexed(
                             items = content.popularArtists,
-                            key = { it.id }
-                        ) { artist ->
+                            key = { index, artist -> "${artist.id}_$index" }
+                        ) { _, artist ->
                             ArtistCard(artist = artist, onClick = { selectedArtist = artist })
                         }
                     }
@@ -360,10 +361,10 @@ fun HomeScreen(
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        items(
+                        itemsIndexed(
                             items = content.newReleases,
-                            key = { it.id }
-                        ) { album ->
+                            key = { index, album -> "${album.id}_$index" }
+                        ) { _, album ->
                             TrackCard(
                                 title = album.title,
                                 subtitle = "${album.artist} • ${album.releaseYear ?: "New"}",
@@ -382,10 +383,10 @@ fun HomeScreen(
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        items(
+                        itemsIndexed(
                             items = content.madeForYou,
-                            key = { it.id }
-                        ) { playlist ->
+                            key = { index, playlist -> "${playlist.id}_$index" }
+                        ) { _, playlist ->
                             TrackCard(
                                 title = playlist.title,
                                 subtitle = playlist.description ?: "Curated flow",

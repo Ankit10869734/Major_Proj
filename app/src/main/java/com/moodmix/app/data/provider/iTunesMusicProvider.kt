@@ -38,30 +38,27 @@ class iTunesMusicProvider(
 
         SearchQueryResult(
             query = query,
-            songs = songs,
-            artists = artists,
-            albums = albums,
+            songs = songs.distinctBy { it.id },
+            artists = artists.distinctBy { it.id },
+            albums = albums.distinctBy { it.id },
             playlists = emptyList()
         )
     }
 
     override suspend fun getTrendingSongs(): List<PlayableTrack> = withContext(Dispatchers.IO) {
-        fetchRssTopSongs()
+        fetchRssTopSongs().distinctBy { it.id }
     }
 
-    /**
-     * Retrieves artists derived from the current Apple Music top songs chart.
-     */
     override suspend fun getPopularArtists(): List<Artist> = withContext(Dispatchers.IO) {
-        fetchRssPopularArtists()
+        fetchRssPopularArtists().distinctBy { it.id }
     }
 
     override suspend fun getNewReleases(): List<Album> = withContext(Dispatchers.IO) {
-        fetchRssNewReleases()
+        fetchRssNewReleases().distinctBy { it.id }
     }
 
     override suspend fun getFeaturedPlaylists(): List<Playlist> = withContext(Dispatchers.IO) {
-        fetchRssFeaturedPlaylists()
+        fetchRssFeaturedPlaylists().distinctBy { it.id }
     }
 
     override suspend fun getMoodTracks(moodPrompt: String): List<PlayableTrack> = withContext(Dispatchers.IO) {
@@ -71,17 +68,17 @@ class iTunesMusicProvider(
             moodPrompt.contains("sad", ignoreCase = true) || moodPrompt.contains("piano", ignoreCase = true) -> "acoustic+slow"
             else -> URLEncoder.encode(moodPrompt, "UTF-8")
         }
-        fetchSongs("https://itunes.apple.com/search?term=$keyword&entity=song&limit=15")
+        fetchSongs("https://itunes.apple.com/search?term=$keyword&entity=song&limit=15").distinctBy { it.id }
     }
 
     override suspend fun getArtistTopTracks(artistName: String): List<PlayableTrack> = withContext(Dispatchers.IO) {
         val encoded = URLEncoder.encode(artistName, "UTF-8")
-        fetchSongs("https://itunes.apple.com/search?term=$encoded&entity=song&limit=15")
+        fetchSongs("https://itunes.apple.com/search?term=$encoded&entity=song&limit=15").distinctBy { it.id }
     }
 
     override suspend fun getAlbumTracks(albumTitle: String, artistName: String): List<PlayableTrack> = withContext(Dispatchers.IO) {
         val encoded = URLEncoder.encode("$albumTitle $artistName", "UTF-8")
-        fetchSongs("https://itunes.apple.com/search?term=$encoded&entity=song&limit=20")
+        fetchSongs("https://itunes.apple.com/search?term=$encoded&entity=song&limit=20").distinctBy { it.id }
     }
 
     private fun fetchRssTopSongs(): List<PlayableTrack> {
@@ -144,7 +141,7 @@ class iTunesMusicProvider(
                     if (title.isNotBlank()) {
                         val highResArtwork = artwork100.replace("100x100bb", "600x600bb")
                         val year = if (releaseDate.length >= 4) releaseDate.take(4) else null
-                        val stableId = if (id.isNotBlank()) "album_$id" else "album_${title.lowercase().replace(Regex("[^a-z0-9]"), "_")}_${abs(title.hashCode())}"
+                        val stableId = if (id.isNotBlank()) "album_$id" else "album_${title.lowercase().replace(Regex("[^a-z0-9]"), "_")}_${abs((title + artist).hashCode())}"
                         list.add(
                             Album(
                                 id = stableId,
@@ -157,7 +154,7 @@ class iTunesMusicProvider(
                         )
                     }
                 }
-                list
+                list.distinctBy { it.id }
             }
         } catch (e: CancellationException) {
             throw e
@@ -209,7 +206,7 @@ class iTunesMusicProvider(
                         )
                     )
                 }
-                list
+                list.distinctBy { it.id }
             }
         } catch (e: CancellationException) {
             throw e
@@ -253,7 +250,7 @@ class iTunesMusicProvider(
                         )
                     }
                 }
-                list
+                list.distinctBy { it.id }
             }
         } catch (e: CancellationException) {
             throw e
@@ -286,9 +283,10 @@ class iTunesMusicProvider(
 
                     if (title.isNotBlank() && previewUrl.isNotBlank()) {
                         val highResArtwork = artwork100.replace("100x100bb", "600x600bb")
+                        val stableId = if (trackId > 0) "itunes_$trackId" else "track_${title.lowercase().replace(Regex("[^a-z0-9]"), "_")}_${abs((title + artist).hashCode())}"
                         list.add(
                             PlayableTrack(
-                                id = if (trackId > 0) "itunes_$trackId" else "itunes_$i",
+                                id = stableId,
                                 title = title,
                                 artist = artist,
                                 album = album,
@@ -302,7 +300,7 @@ class iTunesMusicProvider(
                         )
                     }
                 }
-                list
+                list.distinctBy { it.id }
             }
         } catch (e: CancellationException) {
             throw e
@@ -341,7 +339,7 @@ class iTunesMusicProvider(
                         )
                     }
                 }
-                list
+                list.distinctBy { it.id }
             }
         } catch (e: CancellationException) {
             throw e
@@ -397,7 +395,7 @@ class iTunesMusicProvider(
                     if (title.isNotBlank()) {
                         val highResArtwork = artwork100.replace("100x100bb", "600x600bb")
                         val year = if (releaseDate.length >= 4) releaseDate.take(4) else null
-                        val stableId = if (collectionId > 0) "album_$collectionId" else "album_${title.lowercase().replace(Regex("[^a-z0-9]"), "_")}_${abs(title.hashCode())}"
+                        val stableId = if (collectionId > 0) "album_$collectionId" else "album_${title.lowercase().replace(Regex("[^a-z0-9]"), "_")}_${abs((title + artist).hashCode())}"
                         list.add(
                             Album(
                                 id = stableId,
@@ -410,7 +408,7 @@ class iTunesMusicProvider(
                         )
                     }
                 }
-                list
+                list.distinctBy { it.id }
             }
         } catch (e: CancellationException) {
             throw e

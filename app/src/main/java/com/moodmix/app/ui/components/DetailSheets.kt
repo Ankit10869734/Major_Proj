@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -61,7 +61,7 @@ fun AlbumDetailSheet(
 
     LaunchedEffect(album) {
         isLoading = true
-        tracks = repository.getAlbumTracks(album.title, album.artist)
+        tracks = repository.getAlbumTracks(album.title, album.artist).distinctBy { it.id }
         isLoading = false
     }
 
@@ -140,10 +140,10 @@ fun AlbumDetailSheet(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.height(300.dp)
                 ) {
-                    items(
+                    itemsIndexed(
                         items = tracks,
-                        key = { it.id }
-                    ) { track ->
+                        key = { index, track -> "${track.id}_$index" }
+                    ) { index, track ->
                         val isActive = (track.id == currentTrackId)
                         TrackRow(
                             title = track.title,
@@ -180,7 +180,7 @@ fun ArtistDetailSheet(
 
     LaunchedEffect(artist) {
         isLoading = true
-        topTracks = repository.getArtistTopTracks(artist.name)
+        topTracks = repository.getArtistTopTracks(artist.name).distinctBy { it.id }
         isLoading = false
     }
 
@@ -267,10 +267,10 @@ fun ArtistDetailSheet(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.height(300.dp)
                 ) {
-                    items(
+                    itemsIndexed(
                         items = topTracks,
-                        key = { it.id }
-                    ) { track ->
+                        key = { index, track -> "${track.id}_$index" }
+                    ) { index, track ->
                         val isActive = (track.id == currentTrackId)
                         TrackRow(
                             title = track.title,
@@ -307,7 +307,7 @@ fun PlaylistDetailSheet(
 
     LaunchedEffect(playlist) {
         isLoading = true
-        tracks = repository.search(playlist.title).songs
+        tracks = repository.search(playlist.title).songs.distinctBy { it.id }
         isLoading = false
     }
 
@@ -386,10 +386,10 @@ fun PlaylistDetailSheet(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.height(300.dp)
                 ) {
-                    items(
+                    itemsIndexed(
                         items = tracks,
-                        key = { it.id }
-                    ) { track ->
+                        key = { index, track -> "${track.id}_$index" }
+                    ) { index, track ->
                         val isActive = (track.id == currentTrackId)
                         TrackRow(
                             title = track.title,
