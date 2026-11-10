@@ -10,7 +10,7 @@ import java.io.File
  * PRODUCTION BACKEND:
  * Hosted on Render at https://moodmix-backend.onrender.com
  *
- * QWEN LLM API:
+ * ACE-STEP 1.5 TURBO / QWEN LLM API:
  * Hosted at https://valiant-program-parched.ngrok-free.dev
  * ============================================================================
  */
@@ -28,6 +28,23 @@ object ApiConfig {
 
     val QWEN_ANALYZE_ENDPOINT: String
         get() = "$QWEN_BASE_URL/analyze"
+
+    /*
+     * ACE-STEP 1.5 TURBO BACKEND CONFIGURATION
+     */
+    const val ACESTEP_BASE_URL = "https://valiant-program-parched.ngrok-free.dev"
+
+    val ACESTEP_HEALTH_ENDPOINT: String
+        get() = "$ACESTEP_BASE_URL/health"
+
+    val ACESTEP_RELEASE_TASK_ENDPOINT: String
+        get() = "$ACESTEP_BASE_URL/release_task"
+
+    val ACESTEP_QUERY_RESULT_ENDPOINT: String
+        get() = "$ACESTEP_BASE_URL/query_result"
+
+    val ACESTEP_MODELS_ENDPOINT: String
+        get() = "$ACESTEP_BASE_URL/v1/models"
 
     /*
      * API ENDPOINTS FOR DAYDREAM & FASTAPI BACKEND

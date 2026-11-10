@@ -61,6 +61,8 @@ fun GenerateScreen(
 
     val currentTrack by PlayerController.currentTrack.collectAsStateWithLifecycle()
     val isPlaying by PlayerController.isPlaying.collectAsStateWithLifecycle()
+    val position by PlayerController.position.collectAsStateWithLifecycle()
+    val duration by PlayerController.duration.collectAsStateWithLifecycle()
 
     var isDownloading by remember { mutableStateOf(false) }
 
@@ -89,7 +91,7 @@ fun GenerateScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Full AI Music Generation Workspace (Active in all builds)
+        // Full AI Music Generation Workspace
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
@@ -261,7 +263,7 @@ fun GenerateScreen(
                     )
 
                     Text(
-                        text = "MoodMix AI Generation • Instrumental",
+                        text = "ACE-Step 1.5 Turbo Generation • WAV",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -307,7 +309,35 @@ fun GenerateScreen(
                             enabled = !isDownloading,
                             shape = RoundedCornerShape(14.dp)
                         ) {
-                            Text(if (isDownloading) "Saving..." else "Export MP3 ⬇")
+                            Text(if (isDownloading) "Saving..." else "Export WAV ⬇")
+                        }
+                    }
+
+                    if (isCurrentPlaying && duration > 0L) {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Slider(
+                            value = position.toFloat().coerceIn(0f, duration.toFloat()),
+                            onValueChange = { newPos ->
+                                PlayerController.seekTo(newPos.toLong())
+                            },
+                            valueRange = 0f..duration.toFloat(),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = formatTime(position),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = formatTime(duration),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
 
@@ -315,7 +345,7 @@ fun GenerateScreen(
                         Spacer(modifier = Modifier.height(20.dp))
 
                         Text(
-                            text = "📝 Generated Lyrics:",
+                            text = "📝 Generated Lyrics / Prompt Notes:",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
@@ -335,6 +365,13 @@ fun GenerateScreen(
             }
         }
     }
+}
+
+private fun formatTime(milliseconds: Long): String {
+    val totalSeconds = (milliseconds / 1000L).coerceAtLeast(0L)
+    val minutes = totalSeconds / 60L
+    val seconds = totalSeconds % 60L
+    return "%d:%02d".format(minutes, seconds)
 }
 
 private suspend fun exportToMusicFolder(context: Context, file: File, title: String) = withContext(Dispatchers.IO) {

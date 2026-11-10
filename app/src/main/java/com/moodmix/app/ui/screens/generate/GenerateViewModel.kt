@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.moodmix.app.network.AceStepApi
 import com.moodmix.app.network.MusicGenApi
 import com.moodmix.app.network.MusicGenerationRequest
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -63,9 +64,11 @@ class GenerateViewModel : ViewModel() {
         }
     }
 
-    fun generateMusic(context: Context, onSuccess: (File) -> Unit) {
+    fun generateMusic(context: Context, onSuccess: (File) -> Unit = {}) {
         val currentPrompt = _uiState.value.prompt.trim()
         if (currentPrompt.isBlank() || _uiState.value.isGenerating) return
+
+        val durationSeconds = _uiState.value.duration.toInt().coerceIn(5, 30)
 
         viewModelScope.launch {
             _uiState.update {
@@ -80,31 +83,46 @@ class GenerateViewModel : ViewModel() {
             }
 
             try {
-                val maxNewTokens = (_uiState.value.duration * 17.0f).toInt()
-                val request = MusicGenerationRequest(
-                    prompt = currentPrompt,
-                    maxNewTokens = maxNewTokens,
-                    generateLyrics = _uiState.value.generateLyrics
-                )
-
-                val result = MusicGenApi.generateWithDetails(
-                    context = context,
-                    request = request,
-                    onStatusUpdate = { statusMsg ->
-                        _uiState.update { it.copy(generationStatusText = statusMsg) }
-                    }
-                )
+                // Primary Generation: ACE-Step 1.5 Turbo
+                val generatedFile = try {
+                    AceStepApi.generateTrack(
+                        context = context,
+                        prompt = currentPrompt,
+                        durationSeconds = durationSeconds,
+                        generateLyrics = _uiState.value.generateLyrics,
+                        onStatusUpdate = { statusMsg ->
+                            _uiState.update { it.copy(generationStatusText = statusMsg) }
+                        }
+                    )
+                } catch (aceStepException: Exception) {
+                    // Fallback Generation: Secondary Server
+                    _uiState.update { it.copy(generationStatusText = "Connecting to secondary server...") }
+                    val maxNewTokens = (durationSeconds * 17.0f).toInt()
+                    val request = MusicGenerationRequest(
+                        prompt = currentPrompt,
+                        maxNewTokens = maxNewTokens,
+                        generateLyrics = _uiState.value.generateLyrics
+                    )
+                    val result = MusicGenApi.generateWithDetails(
+                        context = context,
+                        request = request,
+                        onStatusUpdate = { statusMsg ->
+                            _uiState.update { it.copy(generationStatusText = statusMsg) }
+                        }
+                    )
+                    result.audioFile
+                }
 
                 _uiState.update {
                     it.copy(
                         isGenerating = false,
-                        generatedFile = result.audioFile,
+                        generatedFile = generatedFile,
                         generatedPrompt = currentPrompt,
-                        generatedLyrics = result.lyrics
+                        generatedLyrics = if (_uiState.value.generateLyrics) "Lyrics prompt attached: $currentPrompt" else null
                     )
                 }
 
-                result.audioFile?.let { onSuccess(it) }
+                onSuccess(generatedFile)
 
             } catch (e: Exception) {
                 _uiState.update {
