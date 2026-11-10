@@ -248,7 +248,7 @@ fun GenerateScreen(
             ) {
                 Column(modifier = Modifier.padding(18.dp)) {
                     Text(
-                        text = "🎉 Generated Track Ready!",
+                        text = "Generated Track Ready!",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary

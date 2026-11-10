@@ -24,7 +24,7 @@ object ApiConfig {
     /*
      * QWEN LLM API CONFIGURATION
      */
-    const val QWEN_BASE_URL = "https://valiant-program-parched.ngrok-free.dev"
+    const val QWEN_BASE_URL = "https://buggy-relic-albatross.ngrok-free.dev"
 
     val QWEN_ANALYZE_ENDPOINT: String
         get() = "$QWEN_BASE_URL/analyze"
