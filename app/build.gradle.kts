@@ -29,17 +29,35 @@ android {
 
     signingConfigs {
         create("release") {
-            val keyStoreFile = keystoreProperties.getProperty("KEYSTORE_FILE")
-            if (keyStoreFile != null && rootProject.file(keyStoreFile).exists()) {
-                storeFile = rootProject.file(keyStoreFile)
-                storePassword = keystoreProperties.getProperty("KEYSTORE_PASSWORD")
-                keyAlias = keystoreProperties.getProperty("KEY_ALIAS")
-                keyPassword = keystoreProperties.getProperty("KEY_PASSWORD")
+            val keyStoreFilePath = keystoreProperties.getProperty("KEYSTORE_FILE")
+            val storePass = keystoreProperties.getProperty("KEYSTORE_PASSWORD")
+            val alias = keystoreProperties.getProperty("KEY_ALIAS")
+            val keyPass = keystoreProperties.getProperty("KEY_PASSWORD")
+
+            val fileExists = keyStoreFilePath != null && rootProject.file(keyStoreFilePath).exists()
+            val credentialsValid = !storePass.isNullOrBlank() && !alias.isNullOrBlank() && !keyPass.isNullOrBlank()
+
+            if (fileExists && credentialsValid) {
+                storeFile = rootProject.file(keyStoreFilePath)
+                storePassword = storePass
+                keyAlias = alias
+                keyPassword = keyPass
             } else {
-                storeFile = signingConfigs.getByName("debug").storeFile
-                storePassword = signingConfigs.getByName("debug").storePassword
-                keyAlias = signingConfigs.getByName("debug").keyAlias
-                keyPassword = signingConfigs.getByName("debug").keyPassword
+                val missingDetails = mutableListOf<String>()
+                if (!keystorePropertiesFile.exists()) {
+                    missingDetails.add("keystore.properties file not found in root project")
+                } else {
+                    if (!fileExists) missingDetails.add("Keystore file '$keyStoreFilePath' not found")
+                    if (storePass.isNullOrBlank()) missingDetails.add("KEYSTORE_PASSWORD is empty")
+                    if (alias.isNullOrBlank()) missingDetails.add("KEY_ALIAS is empty")
+                    if (keyPass.isNullOrBlank()) missingDetails.add("KEY_PASSWORD is empty")
+                }
+                val errorMessage = "CRITICAL ERROR: Release build signing configuration is incomplete (${missingDetails.joinToString("; ")}). " +
+                        "Please create 'keystore.properties' in the root project directory with KEYSTORE_FILE, KEYSTORE_PASSWORD, KEY_ALIAS, and KEY_PASSWORD properties."
+
+                if (gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }) {
+                    throw InvalidUserDataException(errorMessage)
+                }
             }
         }
     }
