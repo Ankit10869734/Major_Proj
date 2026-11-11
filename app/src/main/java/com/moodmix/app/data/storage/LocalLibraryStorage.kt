@@ -128,29 +128,31 @@ class LocalLibraryStorage(private val context: Context) : SQLiteOpenHelper(conte
             persistentDir.mkdirs()
         }
 
-        // Migrate cached files to persistent directory
-        val cacheDir = File(context.cacheDir, "generated_audio")
-        if (cacheDir.exists()) {
-            val cachedFiles = cacheDir.listFiles { _, name -> name.endsWith(".wav") || name.endsWith(".mp3") }.orEmpty()
-            for (file in cachedFiles) {
-                if (file.length() > 0L) {
-                    val targetFile = File(persistentDir, file.name)
-                    if (!targetFile.exists()) {
-                        file.copyTo(targetFile, overwrite = true)
+        // Migrate cached files from all potential cache directories to persistent storage
+        val cacheFolderNames = listOf("moodmix_generated", "generated_audio")
+        for (folderName in cacheFolderNames) {
+            val cacheDir = File(context.cacheDir, folderName)
+            if (cacheDir.exists() && cacheDir.isDirectory) {
+                val cachedFiles = cacheDir.listFiles { _, name -> name.endsWith(".wav", ignoreCase = true) || name.endsWith(".mp3", ignoreCase = true) }.orEmpty()
+                for (file in cachedFiles) {
+                    if (file.length() > 0L) {
+                        val targetFile = File(persistentDir, file.name)
+                        if (!targetFile.exists()) {
+                            file.copyTo(targetFile, overwrite = true)
+                        }
                     }
-                    file.delete()
                 }
             }
         }
 
-        // List persistent files
-        val persistentFiles = persistentDir.listFiles { _, name -> name.endsWith(".wav") || name.endsWith(".mp3") }
+        // List all persistent generated tracks
+        val persistentFiles = persistentDir.listFiles { _, name -> name.endsWith(".wav", ignoreCase = true) || name.endsWith(".mp3", ignoreCase = true) }
             ?.sortedByDescending { it.lastModified() }
             .orEmpty()
 
         persistentFiles.map { file ->
             val isMp3 = file.name.endsWith(".mp3", ignoreCase = true)
-            val genreLabel = if (isMp3) "MP3 AI Audio" else "WAV AI Audio"
+            val genreLabel = if (isMp3) "MP3 AI Audio" else "ACE-Step WAV"
             PlayableTrack(
                 id = file.name,
                 title = file.nameWithoutExtension.replace('_', ' '),

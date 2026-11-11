@@ -5,8 +5,6 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.moodmix.app.network.AceStepApi
-import com.moodmix.app.network.MusicGenApi
-import com.moodmix.app.network.MusicGenerationRequest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,7 +18,7 @@ data class GenerateUiState(
     val duration: Float = 15f,
     val generateLyrics: Boolean = false,
     val isGenerating: Boolean = false,
-    val generationStatusText: String = "Connecting to server...",
+    val generationStatusText: String = "Connecting to ACE-Step server...",
     val isDownloading: Boolean = false,
     val generatedFile: File? = null,
     val generatedPrompt: String = "",
@@ -78,40 +76,20 @@ class GenerateViewModel : ViewModel() {
                     generatedFile = null,
                     generatedPrompt = "",
                     generatedLyrics = null,
-                    generationStatusText = "Connecting to server..."
+                    generationStatusText = "Connecting to ACE-Step 1.5 Turbo server..."
                 )
             }
 
             try {
-                // Primary Generation: ACE-Step 1.5 Turbo
-                val generatedFile = try {
-                    AceStepApi.generateTrack(
-                        context = context,
-                        prompt = currentPrompt,
-                        durationSeconds = durationSeconds,
-                        generateLyrics = _uiState.value.generateLyrics,
-                        onStatusUpdate = { statusMsg ->
-                            _uiState.update { it.copy(generationStatusText = statusMsg) }
-                        }
-                    )
-                } catch (aceStepException: Exception) {
-                    // Fallback Generation: Secondary Server
-                    _uiState.update { it.copy(generationStatusText = "Connecting to secondary server...") }
-                    val maxNewTokens = (durationSeconds * 17.0f).toInt()
-                    val request = MusicGenerationRequest(
-                        prompt = currentPrompt,
-                        maxNewTokens = maxNewTokens,
-                        generateLyrics = _uiState.value.generateLyrics
-                    )
-                    val result = MusicGenApi.generateWithDetails(
-                        context = context,
-                        request = request,
-                        onStatusUpdate = { statusMsg ->
-                            _uiState.update { it.copy(generationStatusText = statusMsg) }
-                        }
-                    )
-                    result.audioFile
-                }
+                val generatedFile = AceStepApi.generateTrack(
+                    context = context,
+                    prompt = currentPrompt,
+                    durationSeconds = durationSeconds,
+                    generateLyrics = _uiState.value.generateLyrics,
+                    onStatusUpdate = { statusMsg ->
+                        _uiState.update { it.copy(generationStatusText = statusMsg) }
+                    }
+                )
 
                 _uiState.update {
                     it.copy(
@@ -125,10 +103,18 @@ class GenerateViewModel : ViewModel() {
                 onSuccess(generatedFile)
 
             } catch (e: Exception) {
+                val friendlyError = if (e.message?.contains("404") == true) {
+                    "ACE-Step server endpoint not found (HTTP 404). Please verify ngrok tunnel status."
+                } else if (e.message?.contains("connect") == true || e.message?.contains("timeout") == true) {
+                    "Could not connect to ACE-Step server. Please check your internet connection or server status."
+                } else {
+                    e.message ?: "ACE-Step music generation failed."
+                }
+
                 _uiState.update {
                     it.copy(
                         isGenerating = false,
-                        errorMessage = e.message ?: "Music generation failed."
+                        errorMessage = friendlyError
                     )
                 }
             }

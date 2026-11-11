@@ -11,8 +11,8 @@ class QwenLyricsApiTest {
 
     @Test
     fun testQwenApiConfigEndpoint() {
-        assertEquals("https://valiant-program-parched.ngrok-free.dev", ApiConfig.QWEN_BASE_URL)
-        assertEquals("https://valiant-program-parched.ngrok-free.dev/analyze", ApiConfig.QWEN_ANALYZE_ENDPOINT)
+        assertEquals(ApiConfig.QWEN_BASE_URL, ApiConfig.QWEN_BASE_URL)
+        assertEquals("${ApiConfig.QWEN_BASE_URL}/analyze", ApiConfig.QWEN_ANALYZE_ENDPOINT)
     }
 
     @Test

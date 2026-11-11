@@ -54,7 +54,7 @@ object AceStepApi {
      * Executes music generation via ACE-Step 1.5 Turbo.
      * 1. Submits release_task POST with exact prompt and duration slider seconds.
      * 2. Polls query_result POST asynchronously.
-     * 3. Downloads generated WAV file to local 7-day cache folder.
+     * 3. Downloads generated WAV file to persistent generated_music folder.
      */
     suspend fun generateTrack(
         context: Context,
@@ -222,20 +222,31 @@ object AceStepApi {
                 cacheFolder.mkdirs()
             }
 
+            val persistentFolder = File(context.filesDir, "generated_music")
+            if (!persistentFolder.exists()) {
+                persistentFolder.mkdirs()
+            }
+
             val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-            val outputFile = File(cacheFolder, "MoodMix_${timeStamp}_${taskId.take(6)}.wav")
+            val fileName = "MoodMix_${timeStamp}_${taskId.take(6)}.wav"
+            val cacheFile = File(cacheFolder, fileName)
+            val persistentFile = File(persistentFolder, fileName)
 
             body.byteStream().use { input ->
-                outputFile.outputStream().use { output ->
+                cacheFile.outputStream().use { output ->
                     input.copyTo(output)
                 }
             }
 
-            if (!outputFile.exists() || (outputFile.length() == 0L)) {
+            if (!cacheFile.exists() || (cacheFile.length() == 0L)) {
                 throw IOException("Downloaded WAV file is empty.")
             }
 
-            return outputFile
+            try {
+                cacheFile.copyTo(persistentFile, overwrite = true)
+            } catch (_: Exception) {}
+
+            return persistentFile
         }
     }
 }

@@ -11,7 +11,7 @@ import java.io.File
  * Hosted on Render at https://moodmix-backend.onrender.com
  *
  * ACE-STEP 1.5 TURBO / QWEN LLM API:
- * Hosted at https://valiant-program-parched.ngrok-free.dev
+ * Hosted at https://buggy-relic-albatross.ngrok-free.dev
  * ============================================================================
  */
 object ApiConfig {
@@ -32,7 +32,7 @@ object ApiConfig {
     /*
      * ACE-STEP 1.5 TURBO BACKEND CONFIGURATION
      */
-    const val ACESTEP_BASE_URL = "https://valiant-program-parched.ngrok-free.dev"
+    const val ACESTEP_BASE_URL = QWEN_BASE_URL
 
     val ACESTEP_HEALTH_ENDPOINT: String
         get() = "$ACESTEP_BASE_URL/health"
