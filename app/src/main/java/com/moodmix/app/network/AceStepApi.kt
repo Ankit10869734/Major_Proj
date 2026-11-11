@@ -60,7 +60,6 @@ object AceStepApi {
         context: Context,
         prompt: String,
         durationSeconds: Int,
-        generateLyrics: Boolean = false,
         onStatusUpdate: ((String) -> Unit)? = null
     ): File = withContext(Dispatchers.IO) {
         cleanExpired7DayCache(context)
@@ -68,11 +67,10 @@ object AceStepApi {
         onStatusUpdate?.invoke("Submitting ACE-Step task...")
 
         val cleanPrompt = prompt.trim().take(400)
-        val lyricsText = if (generateLyrics) prompt else ""
 
         val releaseJson = JSONObject().apply {
             put("prompt", cleanPrompt)
-            put("lyrics", lyricsText)
+            put("lyrics", "")
             put("thinking", true)
             put("audio_duration", durationSeconds.coerceIn(5, 30))
             put("audio_format", "wav")

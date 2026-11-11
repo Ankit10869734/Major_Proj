@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -27,7 +26,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -151,33 +149,6 @@ fun GenerateScreen(
                     modifier = Modifier.fillMaxWidth(),
                     enabled = !uiState.isGenerating
                 )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Generate lyrics",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "Create matching AI lyrics for this track",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    Switch(
-                        checked = uiState.generateLyrics,
-                        onCheckedChange = { viewModel.onGenerateLyricsToggled(it) },
-                        enabled = !uiState.isGenerating
-                    )
-                }
 
                 Spacer(modifier = Modifier.height(24.dp))
 
@@ -337,27 +308,6 @@ fun GenerateScreen(
                                 text = formatTime(duration),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    if (!uiState.generatedLyrics.isNullOrBlank()) {
-                        Spacer(modifier = Modifier.height(20.dp))
-
-                        Text(
-                            text = "📝 Generated Lyrics / Prompt Notes:",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        SelectionContainer {
-                            Text(
-                                text = uiState.generatedLyrics!!,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
                     }

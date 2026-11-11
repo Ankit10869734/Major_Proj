@@ -16,13 +16,11 @@ import java.io.File
 data class GenerateUiState(
     val prompt: String = "",
     val duration: Float = 15f,
-    val generateLyrics: Boolean = false,
     val isGenerating: Boolean = false,
     val generationStatusText: String = "Connecting to ACE-Step server...",
     val isDownloading: Boolean = false,
     val generatedFile: File? = null,
     val generatedPrompt: String = "",
-    val generatedLyrics: String? = null,
     val errorMessage: String? = null,
     val isPlaying: Boolean = false,
     val playbackPosition: Long = 0L,
@@ -48,10 +46,6 @@ class GenerateViewModel : ViewModel() {
         _uiState.update { it.copy(duration = newDuration) }
     }
 
-    fun onGenerateLyricsToggled(enabled: Boolean) {
-        _uiState.update { it.copy(generateLyrics = enabled) }
-    }
-
     fun updatePlaybackState(isPlaying: Boolean, position: Long, duration: Long) {
         _uiState.update {
             it.copy(
@@ -75,7 +69,6 @@ class GenerateViewModel : ViewModel() {
                     errorMessage = null,
                     generatedFile = null,
                     generatedPrompt = "",
-                    generatedLyrics = null,
                     generationStatusText = "Connecting to ACE-Step 1.5 Turbo server..."
                 )
             }
@@ -85,7 +78,6 @@ class GenerateViewModel : ViewModel() {
                     context = context,
                     prompt = currentPrompt,
                     durationSeconds = durationSeconds,
-                    generateLyrics = _uiState.value.generateLyrics,
                     onStatusUpdate = { statusMsg ->
                         _uiState.update { it.copy(generationStatusText = statusMsg) }
                     }
@@ -95,8 +87,7 @@ class GenerateViewModel : ViewModel() {
                     it.copy(
                         isGenerating = false,
                         generatedFile = generatedFile,
-                        generatedPrompt = currentPrompt,
-                        generatedLyrics = if (_uiState.value.generateLyrics) "Lyrics prompt attached: $currentPrompt" else null
+                        generatedPrompt = currentPrompt
                     )
                 }
 

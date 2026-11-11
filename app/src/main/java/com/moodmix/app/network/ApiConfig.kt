@@ -10,8 +10,11 @@ import java.io.File
  * PRODUCTION BACKEND:
  * Hosted on Render at https://moodmix-backend.onrender.com
  *
- * ACE-STEP 1.5 TURBO / QWEN LLM API:
+ * QWEN LLM API (Port 8000):
  * Hosted at https://buggy-relic-albatross.ngrok-free.dev
+ *
+ * ACE-STEP 1.5 TURBO BACKEND (Port 8001):
+ * Hosted at https://valiant-program-parched.ngrok-free.dev
  * ============================================================================
  */
 object ApiConfig {
@@ -22,7 +25,7 @@ object ApiConfig {
     const val BASE_URL = "https://moodmix-backend.onrender.com"
 
     /*
-     * QWEN LLM API CONFIGURATION
+     * QWEN LLM API CONFIGURATION (Port 8000)
      */
     const val QWEN_BASE_URL = "https://buggy-relic-albatross.ngrok-free.dev"
 
@@ -30,9 +33,9 @@ object ApiConfig {
         get() = "$QWEN_BASE_URL/analyze"
 
     /*
-     * ACE-STEP 1.5 TURBO BACKEND CONFIGURATION
+     * ACE-STEP 1.5 TURBO BACKEND CONFIGURATION (Port 8001)
      */
-    const val ACESTEP_BASE_URL = QWEN_BASE_URL
+    const val ACESTEP_BASE_URL = "https://valiant-program-parched.ngrok-free.dev"
 
     val ACESTEP_HEALTH_ENDPOINT: String
         get() = "$ACESTEP_BASE_URL/health"
@@ -43,11 +46,14 @@ object ApiConfig {
     val ACESTEP_QUERY_RESULT_ENDPOINT: String
         get() = "$ACESTEP_BASE_URL/query_result"
 
+    val ACESTEP_AUDIO_ENDPOINT: String
+        get() = "$ACESTEP_BASE_URL/v1/audio"
+
     val ACESTEP_MODELS_ENDPOINT: String
         get() = "$ACESTEP_BASE_URL/v1/models"
 
     /*
-     * API ENDPOINTS FOR DAYDREAM & FASTAPI BACKEND
+     * API ENDPOINTS FOR FASTAPI BACKEND
      */
     val GENERATE_ENDPOINT: String
         get() = "$BASE_URL/generate"

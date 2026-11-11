@@ -1,6 +1,16 @@
+import com.android.build.api.variant.VariantOutput
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+}
+
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
 android {
@@ -12,9 +22,26 @@ android {
         minSdk = 29
         targetSdk = 37
         versionCode = 1
-        versionName = "1.0"
+        versionName = "v1.0 Release"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        create("release") {
+            val keyStoreFile = keystoreProperties.getProperty("KEYSTORE_FILE")
+            if (keyStoreFile != null && rootProject.file(keyStoreFile).exists()) {
+                storeFile = rootProject.file(keyStoreFile)
+                storePassword = keystoreProperties.getProperty("KEYSTORE_PASSWORD")
+                keyAlias = keystoreProperties.getProperty("KEY_ALIAS")
+                keyPassword = keystoreProperties.getProperty("KEY_PASSWORD")
+            } else {
+                storeFile = signingConfigs.getByName("debug").storeFile
+                storePassword = signingConfigs.getByName("debug").storePassword
+                keyAlias = signingConfigs.getByName("debug").keyAlias
+                keyPassword = signingConfigs.getByName("debug").keyPassword
+            }
+        }
     }
 
     buildTypes {
@@ -30,7 +57,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
@@ -40,6 +67,18 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+}
+
+androidComponents {
+    onVariants { variant ->
+        if (variant.buildType == "release") {
+            variant.outputs.forEach { output ->
+                if (output is VariantOutput) {
+                    output.outputFileName.set("MoodMix-v1.0-release.apk")
+                }
+            }
+        }
     }
 }
 
