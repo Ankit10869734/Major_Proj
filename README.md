@@ -530,7 +530,7 @@ The application is intended as a demonstration of integrating mobile development
 B.Tech — Computer Science and Engineering  
 KIIT University, Bhubaneswar
 
-**Repository:** [MoodMix](https://github.com/Ankit10869734/MoodMix)
+**Repository:** [MoodMix](https://github.com/Ankit10869734/Major_Proj)
 
 
 ---
