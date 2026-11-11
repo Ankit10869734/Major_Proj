@@ -1,187 +1,542 @@
-# 🎵 MoodMix — AI Music Intelligence & Regional Adaptation Android App
+# MoodMix
 
-Welcome to the **MoodMix** repository! MoodMix is a modern native Android application built with **Kotlin**, **Jetpack Compose Material 3**, and **Media3 / ExoPlayer** designed for AI-driven music generation, streaming discovery, lyrics intelligence, audio DSP analysis, and seasonal regional theme adaptation.
+**An AI-powered Android music application combining music discovery, generative audio, music intelligence, and personalized listening experiences.**
 
-This project includes the Android frontend, backend API server integration, model integration adapter framework, and Kaggle notebook Qwen LLM service.
+MoodMix is a native Android application built with Kotlin and Jetpack Compose. It brings together AI-powered music generation, catalogue discovery, natural-language search, audio signal analysis, lyrics intelligence, and music playback in a unified mobile experience.
 
----
-
-## 📌 1. Project Overview & Features
-
-### Core App Workspaces
-
-1. **🌐 Discover (Home)**:
-   - Dynamic greetings and time-of-day contextual AI music recommendation prompts.
-   - Streaming discovery feed powered by Apple Music RSS APIs (Recently Played, Trending Songs, Popular Artists, New Releases, Featured Playlists).
-   - **Tab Navigation State Preservation**: Prevents unnecessary page wipes, loading shimmers, and duplicate API requests when switching between tabs.
-   - **Regional & Festive Theme Adaptation**: Automatically detects device locale or manual region selection (India, United States, Germany, Japan, Standard Dark).
-   - **Lunisolar Diwali Festival Theme**: Features exact Indian Standard Time (`Asia/Kolkata`) Diwali dates (2024–2030) derived from official Drik Panchang astronomical calculations, dynamically applying WCAG 2.2 AA-compliant Gold (`#FFD700`), Amber-Orange (`#FF8F00`), and Festive Pink (`#FF6584`) color palettes.
-
-2. **🔍 Search (Natural Language & Voice Integration)**:
-   - Live music catalogue search across songs, artists, and albums with filter chips (All, Songs, Artists, Albums).
-   - **Voice Search Microphone Integration**: Embedded microphone button (`mic`) inside the search bar.
-   - **Integrated Speech-to-Text**: Transcribes spoken song or artist queries using Android `SpeechRecognizer` with offline model support (`RecognizerIntent.EXTRA_PREFER_OFFLINE`).
-   - **Natural Language Query Interpretation**: Qwen LLM interprets complex search queries (e.g. *"can you find soft acoustic songs for studying"*) into targeted keywords before executing catalogue lookup.
-   - **Editable Transcript**: Speech transcripts can be reviewed and edited in the query box before or after submitting.
-
-3. **🤖 Create (AI Music Generation)**:
-   - Full AI Music Creation Workspace available in both Debug and Release builds.
-   - User text prompt input (up to 400 characters), duration slider (5–30 seconds), and AI lyrics generator toggle.
-   - **Backend Integration**: Communicates with the MoodMix FastAPI backend server (`POST /generate` and `POST /api/v2/generate`).
-   - **Teammate Model Integration Layer**: Supports model-agnostic adapters (`BaseMusicModelAdapter`) for Magenta, PyTorch, and custom teammate music generation models.
-   - Audio export to Android device storage (`Music/MoodMix/`) via MediaStore APIs.
-
-4. **💬 Extras (AI Tools & Intelligence)**:
-   - **Song Analysis & Breakdown**: On-device audio DSP analyzer (`AudioAnalyzer`) computing tempo (BPM), key signature, energy curve, loudness (dBFS), and segment boundaries from local audio files, enriched with Qwen LLM musical interpretation.
-   - **Lyrics Intelligence**: On-device lyrics structure, sentiment, and rhyme scheme analyzer paired with **On-Device ML Kit Translation** (12+ languages) and **Qwen LLM Lyrics Analysis**.
-   - **AI DJ & Smart Transitions**: On-device BPM tempo matching, crossfade auditioning (Smooth, Linear, Quick Cut), and Qwen transition vibe commentary.
-   - **Regional Theme & Occasions Selector**: Toggle automatic theme adaptation or force specific manual region overrides.
-
-5. **📚 Library & Listening Insights**:
-   - Organized tabs for All Tracks, Saved AI Creations, Liked Songs, and Recently Played History.
-   - **🤖 Qwen Listening Insights Banner**: Analyzes actual saved titles and artists in user history to generate personalized listening habit summaries (*"Your recent activity shows a preference for lo-fi beats, ambient piano, and pop hits."*).
-   - Track detail bottom sheet for playback, seeking, liking, and system file sharing.
-
-6. **🎧 Media3 Playback & Service Lifecycle**:
-   - Foreground `MediaSessionService` (`PlaybackService.kt`) with lock screen controls and system notification.
-   - **Mini-Player Close (X) Button**: Dismisses playback, clears media queue, and removes system notifications immediately.
-   - **Android `onTaskRemoved()` Recents Swipe Cleanup**: Swiping MoodMix away from Android Recent Apps cleanly stops playback, removes notifications, and terminates the service.
+The application follows a hybrid architecture: lightweight music analysis and application functionality run locally on Android, while computationally intensive AI inference is handled by independently hosted cloud services.
 
 ---
 
-## 🏗️ 2. Architecture & Tech Stack
+## Overview
 
+MoodMix is designed around five primary workspaces:
+
+| Workspace | Description |
+|---|---|
+| Discover | Music discovery, charts, releases, and regional experiences |
+| Search | Catalogue search with natural-language and voice input |
+| Create | AI-powered text-to-music generation |
+| Extras | Audio analysis, lyrics intelligence, translation, and DJ transitions |
+| Library | Generated music, liked tracks, listening history, and listening insights |
+
+The system integrates two independent AI backends:
+
+- **ACE-Step 1.5 Turbo** — generative audio inference and WAV music generation.
+- **Qwen2.5-Omni-3B** — natural-language understanding and music-related text intelligence.
+
+Both services are hosted independently on Kaggle GPU sessions and exposed through separate API tunnels.
+
+---
+
+## Features
+
+### 1. Discover
+
+A music discovery workspace combining catalogue data with contextual application experiences.
+
+- Music discovery through Apple Music RSS and catalogue endpoints.
+- Trending music, popular artists, albums, and new releases.
+- Contextual greetings and recommendation prompts.
+- Preserved navigation state to reduce unnecessary reloads when switching workspaces.
+- Regional theme adaptation based on device locale or manual selection.
+- Seasonal and festival-oriented themes, including a Diwali theme based on Indian Standard Time date calculations.
+
+### 2. Search
+
+A music search experience supporting both conventional and natural-language queries.
+
+- Search across songs, artists, and albums.
+- Category filters for search results.
+- Integrated microphone-based voice search.
+- Speech-to-text using Android SpeechRecognizer.
+- Editable voice transcripts.
+- Qwen-assisted natural-language query interpretation.
+- Catalogue search using the interpreted query.
+- Fallback to the original query when remote Qwen inference is unavailable.
+
+### 3. Create
+
+A dedicated AI music-generation workspace powered by ACE-Step 1.5 Turbo.
+
+- Text-to-music generation from user-defined prompts.
+- Configurable generation duration.
+- Asynchronous generation workflow.
+- Task submission and status polling.
+- WAV audio retrieval.
+- Generated-track playback.
+- Persistent storage of generated tracks in the application library.
+- Export to the device's `Music/MoodMix/` directory using Android MediaStore.
+
+**Generation pipeline:**
+
+1. The user submits a music-generation prompt.
+2. The Android client sends a generation request to the ACE-Step API.
+3. The backend queues and processes the generation task.
+4. The application periodically checks the task status.
+5. Once completed, the generated WAV file is retrieved.
+6. The audio is stored locally and made available for playback and export.
+
+### 4. Extras — Music Intelligence
+
+A collection of music-analysis and audio-processing utilities.
+
+**Audio Analysis**
+
+The on-device `AudioAnalyzer` performs digital signal processing on local audio files to calculate:
+
+- Tempo estimation (BPM).
+- Musical key estimation.
+- RMS-based loudness analysis.
+- Energy distribution across audio segments.
+- Spectral features used for onset and tempo estimation.
+
+The documented implementation uses PCM decoding, spectral flux analysis, autocorrelation, chroma features, and Krumhansl-Schmuckler key profiles.
+
+**Lyrics Intelligence**
+
+- Lyrics structure analysis.
+- Sentiment and emotional-tone analysis.
+- Rhyme and thematic analysis.
+- Qwen-assisted semantic interpretation.
+- Local analysis through the lyrics-processing pipeline.
+
+**Translation**
+
+- On-device translation using Google ML Kit.
+- Language identification.
+- Line-by-line lyrics translation.
+- Support for multiple target languages.
+
+**AI DJ and Smart Transitions**
+
+- BPM-based tempo matching.
+- Transition compatibility assistance.
+- Configurable transition auditioning.
+- Smooth, linear, and quick-cut transition modes.
+- Equal-power volume crossfading through ExoPlayer.
+
+### 5. Library
+
+A centralized workspace for personal music management.
+
+- Generated music collection.
+- Liked catalogue tracks.
+- Listening history.
+- Track details and playback controls.
+- Persistent storage of generated WAV files.
+- Qwen-assisted listening insights based on saved listening activity.
+
+---
+
+## System Architecture
+
+MoodMix separates its Android application from its remote AI inference services.
+
+```text
+                         MOODMIX ANDROID APP
+┌──────────────────────────────────────────────────────────────┐
+│                                                              │
+│                    Jetpack Compose UI                        │
+│                                                              │
+│   Discover     Search      Create      Extras      Library   │
+│                                                              │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│                       ViewModels                              │
+│                                                              │
+│              Kotlin Coroutines / StateFlow                   │
+│                                                              │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│                   Repository / Service Layer                  │
+│                                                              │
+│   MusicRepository   QwenApi   AceStepApi   PlayerController  │
+│                                                              │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│                    Local Processing                           │
+│                                                              │
+│       AudioAnalyzer    LyricsAnalyzer    ML Kit              │
+│                                                              │
+│                    Local Persistence                          │
+│                                                              │
+│                  SQLite / DataStore / Files                  │
+└──────────────────────────────────────────────────────────────┘
+              │                  │                  │
+              ▼                  ▼                  ▼
+        Apple Music         Qwen Service       ACE-Step Service
+        Catalogue           Kaggle GPU         Kaggle GPU
+                            Port 8000          Port 8001
+                            /analyze           Generation API
 ```
-+-----------------------------------------------------------------------+
-|                       Jetpack Compose UI Layer                        |
-|   HomeScreen  |  SearchScreen  |  GenerateScreen  |  LibraryScreen   |
-+-----------------------------------------------------------------------+
-                                   | (StateFlow / Coroutines)
-+-----------------------------------------------------------------------+
-|                           ViewModels Layer                            |
-| HomeViewModel | SearchViewModel | GenerateViewModel | LibraryViewModel|
-+-----------------------------------------------------------------------+
-                                   |
-+-----------------------------------------------------------------------+
-|                         Data & Service Layer                          |
-| MusicRepository | QwenApi | RegionalThemePreferences | PlaybackService|
-+-----------------------------------------------------------------------+
-        |                          |                        |
-        v                          v                        v
-+---------------+        +------------------+     +------------------+
-| Apple RSS API |        |  Qwen LLM API    |     |  FastAPI Server  |
-| (Discover)    |        |  (Kaggle / ngrok)|     |  (Render ML)     |
-+---------------+        +------------------+     +------------------+
-```
 
-### Core Technologies
+### Application Architecture
 
-- **Language**: Kotlin 100%
-- **UI Toolkit**: Jetpack Compose with Material 3 Design System
-- **Architecture Pattern**: MVVM (Model-View-ViewModel) + Unidirectional Data Flow
-- **State Management**: Kotlin Coroutines & `StateFlow`
-- **Audio Playback Engine**: AndroidX `Media3` ExoPlayer 1.11.1 & `MediaSessionService`
-- **Networking**: OkHttp 4.12.0
-- **On-Device ML**: Google ML Kit Translation (`com.google.mlkit:translate`) & Language Identification (`com.google.mlkit:language-id`)
-- **Remote LLM**: Qwen2.5-Omni-3B hosted on Kaggle GPU / ngrok
-- **Image Loading**: Coil 3 (`io.coil-kt.coil3`)
-- **Color Extraction**: AndroidX Palette (`androidx.palette:palette-ktx`)
-- **Persistence**: AndroidX DataStore Preferences (`androidx.datastore:datastore-preferences`)
+The Android application uses an MVVM-oriented architecture with Clean Architecture principles and unidirectional data flow.
+
+| Layer | Responsibility |
+|---|---|
+| Presentation | Jetpack Compose screens and UI components |
+| ViewModels | Application state, event handling, and business-flow coordination |
+| Repository / Services | Data access, networking, and service coordination |
+| Domain / Processing | Music analysis and application-specific logic |
+| Data | Local persistence and remote data integration |
+
+### Data and Playback
+
+- SQLite for local music metadata and listening history.
+- DataStore Preferences for application settings.
+- Internal application storage for generated audio.
+- Android MediaStore for public audio export.
+- AndroidX Media3 ExoPlayer for audio playback.
+- MediaSessionService for background playback and system media controls.
 
 ---
 
-## 📦 3. APK & Build Optimizations
+## AI Backend Services
 
-The application underwent rigorous build and packaging optimization:
+MoodMix uses two independent AI services. They have different responsibilities and are not interchangeable.
 
-| Metric | Debug APK | Release APK | Release AAB | Size Reduction | Reduction % |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **Total Size** | **142.59 MB** | **24.19 MB** | **16.13 MB** | **-118.40 MB** | **-83.0%** |
-| **Native Libraries (`lib/`)** | 63.90 MB | **16.59 MB** | ~16.59 MB | **-47.31 MB** | **-74.0%** |
-| **Compiled DEX Files** | 71.90 MB | **5.26 MB** | ~5.26 MB | **-66.64 MB** | **-92.7%** |
-| **Packaged ABIs** | 4 ABIs | **1 (`arm64-v8a` only)** | **1 (`arm64-v8a` only)** | **-3 ABIs** | **-75.0%** |
+### ACE-Step 1.5 Turbo — Music Generation
 
-### Release Build Configurations (`app/build.gradle.kts`)
-- **Production ABI Filter**: `ndk { abiFilters.add("arm64-v8a") }` filters out `x86`, `x86_64`, and `armeabi-v7a` native libraries in production releases.
-- **R8 Code & Resource Shrinking**: `isMinifyEnabled = true` and `isShrinkResources = true` strip unused classes and resources.
-- **Refined ProGuard Rules**: Preserved serialization DTOs (`com.moodmix.app.domain.model.**`, `com.moodmix.app.network.**`) and Media3 session interfaces while enabling full R8 minification across UI screens.
+**Model components:**
+- `acestep-v15-turbo`
+- `acestep-5Hz-lm-0.6B`
 
----
+**Purpose:** Text-to-music generation.
 
-## 📡 4. Server & Qwen LLM API Configuration
+**Deployment:** Kaggle GPU environment, exposed through ngrok.
 
-All networking endpoints are centralized in [`ApiConfig.kt`](file:///C:/Users/Blade/AndroidStudioProjects/MoodMix/app/src/main/java/com/moodmix/app/network/ApiConfig.kt):
+**API workflow:**
 
-```kotlin
-object ApiConfig {
+| Method | Endpoint | Purpose |
+|---|---|---|
+| POST | `/release_task` | Submit a music-generation task |
+| POST | `/query_result` | Retrieve task status and results |
+| GET | `/v1/audio` | Retrieve generated audio |
 
-    // FastAPI Production Backend
-    const val BASE_URL = "https://moodmix-backend.onrender.com"
+The Android integration is implemented through `AceStepApi.kt`.
 
-    // Qwen LLM Backend (Kaggle / ngrok)
-    const val QWEN_BASE_URL = "https://valiant-program-parched.ngrok-free.dev"
+The client submits a generation request, extracts the task identifier, polls for completion, retrieves the generated WAV file, and makes the result available to the application.
 
-    val QWEN_ANALYZE_ENDPOINT get() = "$QWEN_BASE_URL/analyze"
-    val GENERATE_ENDPOINT get() = "$BASE_URL/generate"
-    val STATUS_ENDPOINT get() = "$BASE_URL/status"
-}
-```
+### Qwen2.5-Omni-3B — Language Intelligence
 
-### Qwen LLM Integration Contract (`QwenApi.kt`)
-Communicates with `POST /analyze` passing task-based payloads:
+**Model:** `Qwen/Qwen2.5-Omni-3B`
+
+**Purpose:** Natural-language understanding and music-related text analysis.
+
+**Deployment:** Kaggle GPU environment, exposed through ngrok.
+
+**Primary API endpoint:**
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/` | Service status and supported tasks |
+| POST | `/analyze` | Task-based language inference |
+
+**Request format:**
+
 ```json
 {
   "task": "lyrics_analysis",
-  "content": "your_lyrics_or_prompt_here"
+  "content": "Text or task-specific input"
 }
 ```
-Includes automatic markdown code fence stripping (`stripMarkdownFences()`) and JSON attribute parsing with **100% on-device fallback resilience** if the remote Qwen server is offline or times out.
+
+The service uses task-specific prompt templates to route requests to the appropriate language-processing workflow.
+
+The documented task categories are:
+
+- `lyrics_analysis`
+- `search_understanding`
+- `voice_query_understanding`
+- `prompt_enhancement`
+- `recommendation_explanation`
+- `discover_personalization`
+- `music_analysis`
+- `listening_preference_analysis`
+- `ai_dj_transition`
+
+The Android integration is implemented through `QwenApi.kt`.
+
+Remote inference is used where semantic interpretation is beneficial. Supported workflows also have local fallback behaviour when the remote service is unavailable.
+
+**Important deployment distinction:** Qwen and ACE-Step are separate services. They use different API ports, independent model environments, and separate public tunnel URLs.
 
 ---
 
-## 🔒 5. Kaggle Notebook Security & Setup
+## Technology Stack
 
-The Qwen LLM backend is hosted via a Kaggle notebook (`MoodMix_Qwen_Kaggle_Notebook.ipynb`).
+### Android Development
 
-### Kaggle Secrets Setup Instructions
-1. Open your notebook in Kaggle.
-2. Go to **Add-ons** $\rightarrow$ **Secrets**.
-3. Click **+ Add a new secret**.
-4. Set **Label**: `NGROK_AUTHTOKEN`, **Value**: Your ngrok token from [dashboard.ngrok.com](https://dashboard.ngrok.com/get-started/your-authtoken).
-5. Check the box to attach `NGROK_AUTHTOKEN` to the notebook session.
+| Technology | Purpose |
+|---|---|
+| Kotlin | Primary programming language |
+| Jetpack Compose | Declarative UI |
+| Material 3 | Design system |
+| Android Architecture Components | Application architecture |
+| Kotlin Coroutines | Asynchronous operations |
+| StateFlow | Reactive state management |
+| OkHttp | HTTP networking |
+| AndroidX Media3 | Audio playback |
+| ExoPlayer | Media playback engine |
+| MediaSessionService | Background playback |
+| SQLite | Local database |
+| DataStore | Preference persistence |
+| Coil 3 | Image loading |
+| AndroidX Palette | Color extraction |
 
-See [`NOTEBOOK_SECURITY_CHANGELOG.md`](file:///C:/Users/Blade/AndroidStudioProjects/MoodMix/NOTEBOOK_SECURITY_CHANGELOG.md) for full security documentation.
+### Artificial Intelligence and Processing
+
+| Technology | Purpose |
+|---|---|
+| ACE-Step 1.5 Turbo | Generative music inference |
+| Qwen2.5-Omni-3B | Language-model inference |
+| Google ML Kit Translation | On-device translation |
+| Google ML Kit Language Identification | Language detection |
+| Digital Signal Processing | Audio feature extraction |
+| Spectral Flux and Autocorrelation | Tempo estimation |
+| Chroma Features | Musical key estimation |
+
+### Backend and Infrastructure
+
+| Technology | Purpose |
+|---|---|
+| Python | AI service implementation |
+| FastAPI | REST API services |
+| Uvicorn | ASGI server |
+| Kaggle GPU Notebooks | Remote model execution |
+| ngrok | Public API tunnelling |
 
 ---
 
-## 🤝 6. Teammate Model Integration Guide
+## Project Structure
 
-For teammate developers connecting custom PyTorch / Magenta music generation models to MoodMix, see [`MODEL_INTEGRATION.md`](file:///C:/Users/Blade/mood-music/melody-craft/MODEL_INTEGRATION.md).
+The following is a logical overview of the application modules and responsibilities.
 
-FastAPI V2 Endpoint: `POST /api/v2/generate`
-- Request: `ModelGenerationRequest` (`prompt`, `genre`, `mood`, `duration`, `model_id`, `user_id`, `extra_params`)
-- Response: `ModelGenerationResponse` (`success`, `track_id`, `audio_url`, `duration`, `format`, `model_id`, `message`)
-
----
-
-## 🧪 7. Build & Verification Instructions
-
-### Run Unit Tests
-```bash
-./gradlew testDebugUnitTest
+```text
+MoodMix/
+│
+├── app/
+│   └── src/
+│       └── main/
+│           ├── java/com/moodmix/app/
+│           │   ├── navigation/
+│           │   ├── ui/
+│           │   │   ├── screens/
+│           │   │   │   ├── home/
+│           │   │   │   ├── search/
+│           │   │   │   ├── generate/
+│           │   │   │   ├── tools/
+│           │   │   │   └── library/
+│           │   │   └── theme/
+│           │   ├── network/
+│           │   │   ├── ApiConfig.kt
+│           │   │   ├── QwenApi.kt
+│           │   │   └── AceStepApi.kt
+│           │   ├── audio/
+│           │   │   └── AudioAnalyzer.kt
+│           │   ├── data/
+│           │   ├── domain/
+│           │   └── playback/
+│           │
+│           └── res/
+│
+├── gradle/
+├── build.gradle.kts
+├── settings.gradle.kts
+└── README.md
 ```
 
-### Build Debug APK
+This illustrates the main architectural areas rather than an exhaustive file listing.
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- Android Studio.
+- Android SDK compatible with the project's Gradle configuration.
+- JDK compatible with the project's Gradle and Android Gradle Plugin versions.
+- A physical Android device or compatible emulator.
+- Kaggle account with access to GPU notebook sessions.
+- ngrok account and authentication token for exposing the backend services.
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/Ankit10869734/MoodMix.git
+cd MoodMix
+```
+
+### 2. Open the Android Project
+
+Open the cloned project in Android Studio and allow Gradle synchronization to complete.
+
+### 3. Configure Backend Endpoints
+
+The Android application centralizes endpoint configuration in `ApiConfig.kt`.
+
+Configure the current service URLs for:
+
+- ACE-Step API.
+- Qwen API.
+- Any other external service required by the application.
+
+Do not commit temporary ngrok URLs or private deployment configuration to source control.
+
+### 4. Configure Kaggle Services
+
+The two AI backends must be deployed independently.
+
+**Qwen service**
+1. Open the Qwen Kaggle notebook.
+2. Configure the required GPU environment and dependencies.
+3. Add `NGROK_AUTHTOKEN` through Kaggle Secrets.
+4. Execute the notebook cells.
+5. Confirm that the FastAPI service starts on port `8000`.
+6. Record the active public tunnel URL.
+
+**ACE-Step service**
+1. Open the ACE-Step 1.5 Kaggle notebook.
+2. Configure the GPU environment and install dependencies.
+3. Initialise the required ACE-Step model components.
+4. Add `NGROK_AUTHTOKEN` through Kaggle Secrets.
+5. Start the API on port `8001`.
+6. Confirm the health endpoint and model initialisation.
+7. Record the active public tunnel URL.
+
+Update the Android endpoint configuration when either tunnel URL changes.
+
+### 5. Build and Run
+
+Run the application through Android Studio or use Gradle:
+
 ```bash
 ./gradlew assembleDebug
 ```
 
-### Build Release APK & AAB
+Run unit tests:
+
+```bash
+./gradlew testDebugUnitTest
+```
+
+Build a release APK:
+
 ```bash
 ./gradlew assembleRelease
+```
+
+Build an Android App Bundle:
+
+```bash
 ./gradlew bundleRelease
 ```
-Output artifacts:
-- Debug APK: `app/build/outputs/apk/debug/app-debug.apk`
-- Release APK: `app/build/outputs/apk/release/app-release.apk`
-- Release AAB: `app/build/outputs/bundle/release/app-release.aab`
+
+---
+
+## Build and Release Engineering
+
+The project documentation reports the following package measurements:
+
+| Artifact | Reported size |
+|---|---:|
+| Debug APK | 142.59 MB |
+| Release APK | 25.40 MB |
+| Release AAB | 16.13 MB |
+
+Documented release optimisations include:
+
+- R8 code minification.
+- Resource shrinking.
+- ARM64-only production ABI packaging.
+- Release signing configuration.
+- APK signature verification.
+
+These are project-reported measurements and may vary with subsequent builds and dependency changes.
+
+---
+
+## Limitations and Deployment Considerations
+
+MoodMix is a hybrid Android and cloud-inference application. Its current architecture has several operational constraints.
+
+**Remote AI availability**
+
+The Qwen and ACE-Step services depend on active Kaggle sessions and ngrok tunnels. If a session terminates or a tunnel URL changes, the Android endpoint configuration must be updated.
+
+**Network dependency**
+
+AI music generation requires a connection to the remote ACE-Step service. Remote Qwen functionality also requires the language service to be reachable. Local processing remains available for supported workflows.
+
+**Audio recognition**
+
+Voice search uses speech recognition and catalogue queries. It does not implement Shazam-style acoustic waveform fingerprinting.
+
+**Audio analysis**
+
+On-device DSP provides estimated musical features. BPM and key estimates should not be treated as professional studio measurements without independent benchmarking.
+
+**Backend deployment**
+
+Kaggle and ngrok are development and demonstration infrastructure. They are not a substitute for a production deployment with persistent hosting, authentication, monitoring, and managed compute resources.
+
+---
+
+## Security
+
+The following practices should be maintained when developing or deploying MoodMix:
+
+- Store ngrok authentication tokens in Kaggle Secrets.
+- Never commit API credentials, keystore passwords, or signing keys.
+- Keep signing configuration outside the public repository.
+- Avoid publishing active temporary tunnel URLs.
+- Do not include private user listening data in public logs or screenshots.
+- Use authenticated and access-controlled endpoints before wider public deployment.
+
+---
+
+## Future Development
+
+Potential areas for further engineering include:
+
+- Persistent cloud hosting for AI inference services.
+- Authenticated API access and request-level security.
+- WebSocket-based generation progress updates.
+- More robust background task handling.
+- Improved audio-analysis accuracy through benchmark datasets.
+- Acoustic waveform fingerprinting for direct music recognition.
+- Further optimisation of remote inference latency and GPU memory consumption.
+
+---
+
+## Project Status
+
+MoodMix is an actively developed Android application integrating music discovery, AI-assisted music generation, audio analysis, and personal music management.
+
+Its architecture combines native Android functionality with independently hosted AI inference services.
+
+The application is intended as a demonstration of integrating mobile development, machine learning inference, digital signal processing, REST API design, and multimedia playback into a unified software system.
+
+---
+
+## Author
+
+**Ankit Das**
+
+B.Tech — Computer Science and Engineering  
+KIIT University, Bhubaneswar
+
+**Repository:** [MoodMix](https://github.com/Ankit10869734/MoodMix)
+
+
+---
+
+## License
+
+No license has been specified yet. All rights are reserved by the author unless a license is added to this repository.
+
+If you intend to make the source code reusable or open source, add an explicit `LICENSE` file and review the licenses of the included models, dependencies, and third-party services before distribution.
