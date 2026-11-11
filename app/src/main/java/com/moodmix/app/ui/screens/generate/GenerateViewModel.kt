@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.moodmix.app.data.repository.MusicRepository
 import com.moodmix.app.network.AceStepApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -91,6 +92,7 @@ class GenerateViewModel : ViewModel() {
                     )
                 }
 
+                MusicRepository.getInstance(context).notifyLibraryUpdated()
                 onSuccess(generatedFile)
 
             } catch (e: Exception) {

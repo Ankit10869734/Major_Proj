@@ -3,16 +3,16 @@ package com.moodmix.app.data.repository
 import android.content.Context
 import com.moodmix.app.data.provider.iTunesMusicProvider
 import com.moodmix.app.data.storage.LocalLibraryStorage
-import com.moodmix.app.domain.model.Album
-import com.moodmix.app.domain.model.Artist
 import com.moodmix.app.domain.model.DiscoverContent
 import com.moodmix.app.domain.model.PlayableTrack
-import com.moodmix.app.domain.model.Playlist
 import com.moodmix.app.domain.model.SearchFilter
 import com.moodmix.app.domain.model.SearchQueryResult
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
@@ -26,6 +26,9 @@ class MusicRepository private constructor(context: Context) {
     private val _likedTrackIds = MutableStateFlow<Set<String>>(emptySet())
     val likedTrackIds: StateFlow<Set<String>> = _likedTrackIds.asStateFlow()
 
+    private val _libraryUpdateSignal = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val libraryUpdateSignal: SharedFlow<Unit> = _libraryUpdateSignal.asSharedFlow()
+
     companion object {
         @Volatile
         private var INSTANCE: MusicRepository? = null
@@ -35,6 +38,10 @@ class MusicRepository private constructor(context: Context) {
                 INSTANCE ?: MusicRepository(context).also { INSTANCE = it }
             }
         }
+    }
+
+    fun notifyLibraryUpdated() {
+        _libraryUpdateSignal.tryEmit(Unit)
     }
 
     suspend fun loadDiscoverContent(): DiscoverContent = withContext(Dispatchers.IO) {
@@ -93,7 +100,7 @@ class MusicRepository private constructor(context: Context) {
 
     suspend fun toggleLikeTrack(track: PlayableTrack): Boolean = withContext(Dispatchers.IO) {
         val currentlyLiked = storage.isTrackLiked(track.id)
-        if (currentlyLiked) {
+        val isLiked = if (currentlyLiked) {
             storage.removeLikedTrack(track.id)
             _likedTrackIds.update { it - track.id }
             false
@@ -102,10 +109,13 @@ class MusicRepository private constructor(context: Context) {
             _likedTrackIds.update { it + track.id }
             true
         }
+        notifyLibraryUpdated()
+        isLiked
     }
 
     suspend fun recordPlayedTrack(track: PlayableTrack) = withContext(Dispatchers.IO) {
         storage.recordPlayedTrack(track)
+        notifyLibraryUpdated()
     }
 
     suspend fun getRecentlyPlayed(): List<PlayableTrack> = withContext(Dispatchers.IO) {

@@ -45,6 +45,15 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     private var hasLoadedData = false
 
+    init {
+        loadLibraryData(forceRefresh = false)
+        viewModelScope.launch {
+            repository.libraryUpdateSignal.collect {
+                loadLibraryData(forceRefresh = true)
+            }
+        }
+    }
+
     fun loadLibraryData(forceRefresh: Boolean = false) {
         if (hasLoadedData && !forceRefresh && _uiState.value.errorMessage == null) {
             return
