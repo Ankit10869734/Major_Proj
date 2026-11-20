@@ -47,6 +47,7 @@ import com.moodmix.app.domain.model.RegionalThemeState
 import com.moodmix.app.navigation.MoodMixNavigation
 import com.moodmix.app.playback.PlayerController
 import com.moodmix.app.ui.theme.MoodMixTheme
+import com.moodmix.app.ui.util.requestHighRefreshRate
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -54,6 +55,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        requestHighRefreshRate()
         enableEdgeToEdge()
         PlayerController.init(this)
 
@@ -110,7 +112,7 @@ fun MoodMixSplashScreen(
                 targetValue = 1.0f,
                 animationSpec = tween(
                     durationMillis = 700,
-                    easing = FastOutSlowInEasing
+                    easing = FastOutSlowInEasingtell
                 )
             )
         }

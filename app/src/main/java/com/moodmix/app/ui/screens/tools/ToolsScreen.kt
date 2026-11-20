@@ -67,6 +67,14 @@ import androidx.compose.ui.unit.dp
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.Translate
+import androidx.compose.runtime.LaunchedEffect
+import com.moodmix.app.network.QwenApi
+import com.moodmix.app.ui.screens.library.libraryGlow
 import com.google.mlkit.common.model.DownloadConditions
 import com.google.mlkit.nl.languageid.LanguageIdentification
 import com.google.mlkit.nl.translate.TranslateLanguage
@@ -74,9 +82,6 @@ import com.google.mlkit.nl.translate.Translation
 import com.google.mlkit.nl.translate.TranslatorOptions
 import com.moodmix.app.audio.AudioAnalyzer
 import com.moodmix.app.audio.SongAnalysis
-import com.moodmix.app.data.theme.RegionalThemePreferences
-import com.moodmix.app.domain.model.AppRegion
-import com.moodmix.app.domain.model.RegionalThemeState
 import com.moodmix.app.lyrics.LyricsAnalysis
 import com.moodmix.app.lyrics.LyricsAnalyzer
 import kotlinx.coroutines.Dispatchers
@@ -147,12 +152,8 @@ fun ToolsScreen(
     viewModel: ToolsViewModel = viewModel()
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val lyricsState by viewModel.lyricsState.collectAsStateWithLifecycle()
-
-    val regionalThemePreferences = remember { RegionalThemePreferences.getInstance(context) }
-    val regionalThemeState by regionalThemePreferences.regionalThemeState.collectAsStateWithLifecycle(initialValue = RegionalThemeState())
 
     var activeTool by remember { mutableStateOf(ActiveTool.NONE) }
     val sheetState = rememberModalBottomSheetState()
@@ -161,173 +162,62 @@ fun ToolsScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = Color.Transparent
     ) { innerPadding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
                 .background(MaterialTheme.colorScheme.background)
-                .padding(innerPadding)
-                .padding(horizontal = 20.dp, vertical = 24.dp)
+                .libraryGlow()
         ) {
-
-            Text(
-                text = "AI Tools",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold
-            )
-
-            Text(
-                text = "Explore MoodMix's music intelligence features",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            ToolCard(
-                icon = "🎵",
-                title = "Song Analysis & Breakdown",
-                description = "Pick an audio file from storage to inspect its structure and attributes.",
-                onClick = { activeTool = ActiveTool.SONG_ANALYSIS }
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            ToolCard(
-                icon = "💬",
-                title = "Lyrics Intelligence",
-                description = "Analyze, translate, and explore rhyme patterns in lyrics.",
-                onClick = { activeTool = ActiveTool.LYRICS_INTELLIGENCE }
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            ToolCard(
-                icon = "✨",
-                title = "AI DJ & Smart Transitions",
-                description = "Configure transition styles and audition DJ crossfades.",
-                onClick = { activeTool = ActiveTool.AI_DJ }
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Regional Themes Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                )
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(innerPadding)
+                    .padding(horizontal = 20.dp, vertical = 24.dp)
             ) {
-                Column(modifier = Modifier.padding(18.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "🌐 Regional Theme & Occasions",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                ToolsHeader()
 
-                        Switch(
-                            checked = regionalThemeState.isAutoThemeEnabled,
-                            onCheckedChange = { enabled ->
-                                scope.launch {
-                                    regionalThemePreferences.setAutoThemeEnabled(enabled)
-                                }
-                            }
-                        )
-                    }
+                Spacer(modifier = Modifier.height(24.dp))
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                ToolCard(
+                    icon = Icons.Default.GraphicEq,
+                    title = "Song Analysis",
+                    description = "Tempo, key, energy and structure of any audio file.",
+                    onClick = { activeTool = ActiveTool.SONG_ANALYSIS }
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                ToolCard(
+                    icon = Icons.Default.Translate,
+                    title = "Lyrics Intelligence",
+                    description = "Analyze themes and sentiment, and translate lyrics.",
+                    onClick = { activeTool = ActiveTool.LYRICS_INTELLIGENCE }
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                ToolCard(
+                    icon = Icons.Default.Album,
+                    title = "AI DJ",
+                    description = "Preview smooth crossfades between two tracks.",
+                    onClick = { activeTool = ActiveTool.AI_DJ }
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                ToolCard(
+                    icon = Icons.Default.School,
+                    title = "Guided Tour",
+                    description = "Walk through MoodMix again.",
+                    onClick = onReplayTutorial
+                )
 
-                    Text(
-                        text = "Region / Occasion Selection:",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold
-                    )
+                Spacer(modifier = Modifier.height(20.dp))
 
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    var isDropdownExpanded by remember { mutableStateOf(false) }
-
-                    Box {
-                        OutlinedButton(
-                            onClick = { isDropdownExpanded = true },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text(
-                                text = when (regionalThemeState.selectedRegion) {
-                                    AppRegion.AUTOMATIC -> "Automatic (Device Locale: ${regionalThemeState.activeRegionCode})"
-                                    AppRegion.INDIA -> "Manual: India (Diwali Supported)"
-                                    AppRegion.UNITED_STATES -> "Manual: United States"
-                                    AppRegion.GERMANY -> "Manual: Germany"
-                                    AppRegion.JAPAN -> "Manual: Japan"
-                                    AppRegion.STANDARD_DARK -> "Manual: Standard Dark Theme (Themes Off)"
-                                }
-                            )
-                        }
-
-                        DropdownMenu(
-                            expanded = isDropdownExpanded,
-                            onDismissRequest = { isDropdownExpanded = false }
-                        ) {
-                            AppRegion.entries.forEach { region ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            when (region) {
-                                                AppRegion.AUTOMATIC -> "Automatic (Device Locale: ${regionalThemeState.activeRegionCode})"
-                                                AppRegion.INDIA -> "Manual: India (Diwali Festival)"
-                                                AppRegion.UNITED_STATES -> "Manual: United States"
-                                                AppRegion.GERMANY -> "Manual: Germany"
-                                                AppRegion.JAPAN -> "Manual: Japan"
-                                                AppRegion.STANDARD_DARK -> "Manual: Standard Dark Theme (Themes Off)"
-                                            }
-                                        )
-                                    },
-                                    onClick = {
-                                        scope.launch {
-                                            regionalThemePreferences.setSelectedRegion(region)
-                                        }
-                                        isDropdownExpanded = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-
-                    if (regionalThemeState.isFestiveActive) {
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text(
-                            text = "✨ Active Occasion: ${regionalThemeState.activeOccasion?.name}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
+                Text(
+                    text = "Results are written by Qwen AI when you're online. Offline, MoodMix switches to its on-device analysis, and each result is labelled with its source.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            ToolCard(
-                icon = "🎓",
-                title = "Replay Interactive Tutorial",
-                description = "Revisit the 5-destination guided walkthrough of MoodMix.",
-                onClick = onReplayTutorial
-            )
         }
     }
 
-    /*
-     * Modal Bottom Sheets for Active Tool Workspaces
-     */
     if (activeTool != ActiveTool.NONE) {
         ModalBottomSheet(
             onDismissRequest = { activeTool = ActiveTool.NONE },
@@ -338,69 +228,16 @@ fun ToolsScreen(
                     context = context,
                     onClose = { activeTool = ActiveTool.NONE }
                 )
-
                 ActiveTool.LYRICS_INTELLIGENCE -> LyricsIntelligenceWorkspace(
                     viewModel = viewModel,
                     lyricsState = lyricsState,
                     onClose = { activeTool = ActiveTool.NONE }
                 )
-
                 ActiveTool.AI_DJ -> AiDjWorkspace(
                     context = context,
                     onClose = { activeTool = ActiveTool.NONE }
                 )
-
                 ActiveTool.NONE -> {}
-            }
-        }
-    }
-}
-
-@Composable
-private fun ToolCard(
-    icon: String,
-    title: String,
-    description: String,
-    onClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(18.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-
-            Text(
-                text = icon,
-                style = MaterialTheme.typography.headlineSmall
-            )
-
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
     }
@@ -419,6 +256,9 @@ private fun SongAnalysisWorkspace(
     var analysisProgress by remember { mutableFloatStateOf(0f) }
     var analysisResult by remember { mutableStateOf<SongAnalysis?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var insightText by remember { mutableStateOf<String?>(null) }
+    var insightViaCloud by remember { mutableStateOf(false) }
+    var insightLoading by remember { mutableStateOf(false) }
 
     val audioPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -426,6 +266,7 @@ private fun SongAnalysisWorkspace(
         selectedAudioUri = uri
         analysisResult = null
         errorMessage = null
+        insightText = null
         if (uri != null) {
             context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
                 val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
@@ -445,7 +286,7 @@ private fun SongAnalysisWorkspace(
             .padding(horizontal = 24.dp, vertical = 16.dp)
     ) {
         Text(
-            text = "🎵 Song Analysis & Breakdown",
+            text = "Song Analysis",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold
         )
@@ -457,7 +298,7 @@ private fun SongAnalysisWorkspace(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp)
         ) {
-            Text(if (selectedAudioUri == null) "Select Audio File from Device" else "Change Audio File")
+            Text(if (selectedAudioUri == null) "Choose an audio file" else "Choose a different file")
         }
 
         if (selectedAudioUri != null) {
@@ -502,8 +343,21 @@ private fun SongAnalysisWorkspace(
                                         analysisProgress = progress
                                     }
                                     analysisResult = result
+                                    insightText = null
+                                    insightLoading = true
+                                    scope.launch {
+                                        val cloud = try { QwenApi.interpretSongAnalysis(result) } catch (_: Exception) { null }
+                                        if (!cloud.isNullOrBlank()) {
+                                            insightText = cloud
+                                            insightViaCloud = true
+                                        } else {
+                                            insightText = localSongSummary(result)
+                                            insightViaCloud = false
+                                        }
+                                        insightLoading = false
+                                    }
                                 } catch (e: Exception) {
-                                    errorMessage = e.message ?: "Song analysis failed."
+                                    errorMessage = "This file couldn't be analyzed. Try a different audio file."
                                 } finally {
                                     isAnalyzing = false
                                 }
@@ -513,7 +367,7 @@ private fun SongAnalysisWorkspace(
                         enabled = !isAnalyzing,
                         shape = RoundedCornerShape(14.dp)
                     ) {
-                        Text(if (isAnalyzing) "Analyzing On-Device DSP..." else "Analyze Audio File")
+                        Text(if (isAnalyzing) "Analyzing…" else "Analyze Audio File")
                     }
 
                     if (isAnalyzing) {
@@ -524,7 +378,7 @@ private fun SongAnalysisWorkspace(
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Processing audio DSP... ${(analysisProgress * 100).toInt()}%",
+                            text = "Analyzing audio… ${(analysisProgress * 100).toInt()}%",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -535,7 +389,7 @@ private fun SongAnalysisWorkspace(
                         Spacer(modifier = Modifier.height(16.dp))
 
                         Text(
-                            text = "On-Device DSP Analysis Breakdown:",
+                            text = "Results",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
@@ -546,31 +400,37 @@ private fun SongAnalysisWorkspace(
                         Text("• Duration: ${formatSecToMinSec(result.durationSec)}")
 
                         val bpmText = if (result.bpm != null) {
-                            "${result.bpm} BPM (Confidence: ${(result.bpmConfidence * 100).toInt()}%)"
+                            "${result.bpm} BPM (${(result.bpmConfidence * 100).toInt()}% sure)"
                         } else {
-                            "Uncertain / Insufficient audio data"
+                            "No steady tempo detected"
                         }
-                        Text("• Estimated Tempo: $bpmText")
+                        Text("• Tempo: $bpmText")
 
                         val keyText = if (result.key != null) {
-                            "${result.key} (Confidence: ${(result.keyConfidence * 100).toInt()}%)"
+                            "${result.key} (${(result.keyConfidence * 100).toInt()}% sure)"
                         } else {
-                            "Uncertain / Insufficient chroma data"
+                            "Couldn't determine the key"
                         }
-                        Text("• Key Signature: $keyText")
+                        Text("• Key: $keyText")
 
                         Text("• Energy Level: ${(result.energy * 100).toInt()}%")
-                        Text("• Approx. Loudness: %.1f dBFS".format(result.loudnessDb))
-                        Text("• Acoustic Vibe (Heuristic): ${result.mood}")
+                        Text("• Loudness: %.1f dB".format(result.loudnessDb))
+                        Text("• Mood: ${result.mood}")
 
                         if (result.sections.isNotEmpty()) {
-                            Text("• Energy Segments: ${result.sections.size} detected")
+                            Text("• Sections: ${result.sections.size}")
                         }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        if (insightLoading) {
+                            Text("Writing a summary…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        insightText?.let { InsightBlock("Summary", it, insightViaCloud) }
 
                         Spacer(modifier = Modifier.height(14.dp))
 
                         Text(
-                            text = "Energy Curve & Energy Segment Boundaries:",
+                            text = "Energy over time",
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -688,7 +548,7 @@ private fun LyricsIntelligenceWorkspace(
             .padding(horizontal = 24.dp, vertical = 16.dp)
     ) {
         Text(
-            text = "💬 Lyrics Intelligence",
+            text = "Lyrics Intelligence",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold
         )
@@ -719,10 +579,10 @@ private fun LyricsIntelligenceWorkspace(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
-                    Text("Analyzing Structure & Sentiment...")
+                    Text("Analyzing…")
                 }
             } else {
-                Text("Analyze Structure & Sentiment")
+                Text("Analyze lyrics")
             }
         }
 
@@ -747,17 +607,21 @@ private fun LyricsIntelligenceWorkspace(
                 )
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "📊 On-Device Lyrics Analysis:",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Lyrics breakdown",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.size(8.dp))
+                        SourceTag(lyricsState.analysisViaCloud)
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Text("• Lines: ${analysis.lineCount} | Words: ${analysis.wordCount} (Unique: ${analysis.uniqueWordCount})")
                     Text("• Avg Syllables per Line: ${"%.1f".format(analysis.avgSyllablesPerLine)}")
-                    Text("• Emotional Sentiment: ${analysis.sentiment} (Score: ${"%.2f".format(analysis.sentimentScore)})")
+                    Text("• Sentiment: ${analysis.sentiment}")
 
                     if (analysis.topRepeatedWords.isNotEmpty()) {
                         Text("• Top Keywords: ${analysis.topRepeatedWords.joinToString(", ") { "${it.first} (${it.second}x)" }}")
@@ -779,7 +643,7 @@ private fun LyricsIntelligenceWorkspace(
                     Spacer(modifier = Modifier.height(14.dp))
 
                     Text(
-                        text = "Estimated Rhyme Patterns (Heuristic):",
+                        text = "Rhyme patterns",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -817,16 +681,20 @@ private fun LyricsIntelligenceWorkspace(
             )
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = "🌐 On-Device Translation (ML Kit)",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "Translation",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.size(8.dp))
+                    SourceTag(cloud = false)
+                }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                val detectedLabel = if (lyricsState.detectedLanguageCode == "und") "Unidentified / Unknown" else {
+                val detectedLabel = if (lyricsState.detectedLanguageCode == "und") "Not detected" else {
                     sourceLanguageOptions.firstOrNull { it.code.lowercase() == lyricsState.detectedLanguageCode.lowercase() }?.displayName ?: lyricsState.detectedLanguageCode
                 }
                 Text(
@@ -1025,7 +893,7 @@ internal suspend fun translateLyricsOnDevice(
         return@withContext "Source and target languages are identical ($sourceLangCode). No translation required."
     }
 
-    onStatusUpdate("Downloading language model (one-time requirement)...")
+    onStatusUpdate("Preparing translation (first time only)…")
 
     val options = TranslatorOptions.Builder()
         .setSourceLanguage(sourceLangCode)
@@ -1046,7 +914,7 @@ internal suspend fun translateLyricsOnDevice(
                 }
         }
 
-        onStatusUpdate("Translating line by line...")
+        onStatusUpdate("Translating…")
 
         val lines = lyricsText.lines()
         val translatedLines = mutableListOf<String>()
@@ -1112,9 +980,11 @@ private fun AiDjWorkspace(
     var crossfadeSeconds by remember { mutableFloatStateOf(4f) }
 
     var matchTempo by remember { mutableStateOf(false) }
-    var isAnalyzingTempo by remember { mutableStateOf(false) }
-    var tempoStatusText by remember { mutableStateOf<String?>(null) }
     var calculatedSpeedB by remember { mutableFloatStateOf(1.0f) }
+    var tempoMatchable by remember { mutableStateOf(false) }
+    var isAnalyzingTracks by remember { mutableStateOf(false) }
+    var adviceText by remember { mutableStateOf<String?>(null) }
+    var djNote by remember { mutableStateOf<String?>(null) }
 
     var isAuditioning by remember { mutableStateOf(false) }
     var auditionStatusText by remember { mutableStateOf("") }
@@ -1175,37 +1045,36 @@ private fun AiDjWorkspace(
         isAuditioning = false
     }
 
-    fun triggerTempoAnalysis() {
-        val uriA = trackAUri
-        val uriB = trackBUri
-        if (matchTempo && uriA != null && uriB != null) {
-            scope.launch {
-                isAnalyzingTempo = true
-                tempoStatusText = "Analyzing BPMs on-device..."
-                try {
-                    val analysisA = AudioAnalyzer.analyze(context, uriA) {}
-                    val analysisB = AudioAnalyzer.analyze(context, uriB) {}
-                    val bpmA = analysisA.bpm
-                    val bpmB = analysisB.bpm
-
-                    if (bpmA != null && bpmB != null && analysisA.bpmConfidence >= 0.35f && analysisB.bpmConfidence >= 0.35f && bpmB > 0) {
-                        val ratio = (bpmA.toFloat() / bpmB.toFloat()).coerceIn(0.92f, 1.08f)
-                        calculatedSpeedB = ratio
-                        tempoStatusText = "Track A: $bpmA BPM | Track B: $bpmB BPM -> Speed B: ${"%.2f".format(ratio)}x"
-                    } else {
-                        calculatedSpeedB = 1.0f
-                        tempoStatusText = "BPM confidence too low for tempo sync."
-                    }
-                } catch (e: Exception) {
-                    calculatedSpeedB = 1.0f
-                    tempoStatusText = "Tempo matching failed: ${e.message}"
-                } finally {
-                    isAnalyzingTempo = false
-                }
+    LaunchedEffect(trackAUri, trackBUri) {
+        adviceText = null
+        djNote = null
+        calculatedSpeedB = 1.0f
+        tempoMatchable = false
+        val uriA = trackAUri ?: return@LaunchedEffect
+        val uriB = trackBUri ?: return@LaunchedEffect
+        isAnalyzingTracks = true
+        try {
+            val a = AudioAnalyzer.analyze(context, uriA) {}
+            val b = AudioAnalyzer.analyze(context, uriB) {}
+            val bpmA = a.bpm
+            val bpmB = b.bpm
+            if (bpmA != null && bpmB != null && bpmB > 0 && a.bpmConfidence >= 0.35f && b.bpmConfidence >= 0.35f) {
+                calculatedSpeedB = (bpmA.toFloat() / bpmB.toFloat()).coerceIn(0.92f, 1.08f)
+                tempoMatchable = true
             }
-        } else {
-            calculatedSpeedB = 1.0f
-            tempoStatusText = null
+            adviceText = djAdvice(a, b)
+            isAnalyzingTracks = false
+            djNote = try {
+                QwenApi.interpretAiDjTransition(trackAName ?: "Track A", trackBName ?: "Track B", bpmA, bpmB)
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                null
+            }
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            adviceText = "These files couldn't be analyzed, but you can still preview a crossfade."
+        } finally {
+            isAnalyzingTracks = false
         }
     }
 
@@ -1216,7 +1085,7 @@ private fun AiDjWorkspace(
             .padding(horizontal = 24.dp, vertical = 16.dp)
     ) {
         Text(
-            text = "✨ AI DJ & Smart Transitions",
+            text = "AI DJ",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold
         )
@@ -1233,7 +1102,7 @@ private fun AiDjWorkspace(
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
-                    text = "Select Tracks to Crossfade:",
+                    text = "Choose your tracks",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold
                 )
@@ -1329,12 +1198,12 @@ private fun AiDjWorkspace(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Match Tempo (BPM Sync)",
+                    text = "Match tempo",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Adjusts Track B playback speed to match Track A",
+                    text = "Nudges Track B's speed to match Track A",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1342,22 +1211,32 @@ private fun AiDjWorkspace(
 
             Switch(
                 checked = matchTempo,
-                onCheckedChange = { checked ->
-                    matchTempo = checked
-                    triggerTempoAnalysis()
-                },
+                onCheckedChange = { matchTempo = it },
                 enabled = !isAuditioning
             )
         }
 
-        if (tempoStatusText != null) {
+        if (isAnalyzingTracks) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("Analyzing tracks…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (matchTempo && !isAnalyzingTracks && trackAUri != null && trackBUri != null) {
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = tempoStatusText!!,
+                text = if (tempoMatchable) "Track B will play at ${"%.2f".format(calculatedSpeedB)}× to match Track A."
+                else "Tempo matching isn't available for this pair.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.Medium
             )
+        }
+        adviceText?.let {
+            Spacer(modifier = Modifier.height(12.dp))
+            InsightBlock("Transition advice", it, cloud = false)
+        }
+        djNote?.let {
+            Spacer(modifier = Modifier.height(8.dp))
+            InsightBlock("DJ note", it, cloud = true)
         }
 
         Spacer(modifier = Modifier.height(20.dp))
@@ -1396,7 +1275,7 @@ private fun AiDjWorkspace(
                         ),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text("Stop Audition ⏹")
+                        Text("Stop preview")
                     }
                 }
             }
@@ -1447,7 +1326,7 @@ private fun AiDjWorkspace(
                             playerA.seekTo(playStartMs)
                             playerA.play()
 
-                            auditionStatusText = "Auditioning Track A lead-in..."
+                            auditionStatusText = "Playing Track A lead-in…"
 
                             while (isActive && playerA.isPlaying && playerA.currentPosition < transitionStartMs) {
                                 val pos = playerA.currentPosition
@@ -1500,11 +1379,12 @@ private fun AiDjWorkspace(
                             }
 
                             playerB.pause()
-                            auditionStatusText = "Transition audition complete"
+                            auditionStatusText = "Preview complete"
                             auditionProgress = 1.0f
 
                         } catch (e: Exception) {
-                            errorMessage = e.message ?: "Audition failed."
+                            if (e is kotlinx.coroutines.CancellationException) throw e
+                            errorMessage = "Couldn't play these files. Try different tracks."
                         } finally {
                             isAuditioning = false
                         }
@@ -1514,7 +1394,7 @@ private fun AiDjWorkspace(
                 enabled = trackAUri != null && trackBUri != null && !isAuditioning,
                 shape = RoundedCornerShape(14.dp)
             ) {
-                Text("Audition Transition ▶")
+                Text("Preview transition")
             }
         }
 

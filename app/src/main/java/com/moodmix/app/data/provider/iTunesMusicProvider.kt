@@ -15,6 +15,9 @@ import org.json.JSONObject
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 
 /**
  * Music discovery and catalogue search provider connecting to Apple Music RSS charts and iTunes Search APIs.
@@ -28,21 +31,35 @@ class iTunesMusicProvider(
 
     override val providerName: String = "Apple Music RSS & iTunes Catalog"
 
-    override suspend fun search(query: String, filter: SearchFilter): SearchQueryResult = withContext(Dispatchers.IO) {
+        override suspend fun search(query: String, filter: SearchFilter): SearchQueryResult = withContext(Dispatchers.IO) {
         if (query.isBlank()) return@withContext SearchQueryResult(query = query)
 
         val encoded = URLEncoder.encode(query, "UTF-8")
-        val songs = if (filter == SearchFilter.ALL || filter == SearchFilter.SONGS) fetchSongs("https://itunes.apple.com/search?term=$encoded&entity=song&limit=25") else emptyList()
-        val artists = if (filter == SearchFilter.ALL || filter == SearchFilter.ARTISTS) fetchArtists("https://itunes.apple.com/search?term=$encoded&entity=musicArtist&limit=10") else emptyList()
-        val albums = if (filter == SearchFilter.ALL || filter == SearchFilter.ALBUMS) fetchAlbums("https://itunes.apple.com/search?term=$encoded&entity=album&limit=10") else emptyList()
+        coroutineScope {
+            val songs = async {
+                if (filter == SearchFilter.ALL || filter == SearchFilter.SONGS)
+                    fetchSongs("https://itunes.apple.com/search?term=$encoded&entity=song&limit=25")
+                else emptyList<PlayableTrack>()
+            }
+            val artists = async {
+                if (filter == SearchFilter.ALL || filter == SearchFilter.ARTISTS)
+                    fetchArtists("https://itunes.apple.com/search?term=$encoded&entity=musicArtist&limit=10")
+                else emptyList<Artist>()
+            }
+            val albums = async {
+                if (filter == SearchFilter.ALL || filter == SearchFilter.ALBUMS)
+                    fetchAlbums("https://itunes.apple.com/search?term=$encoded&entity=album&limit=10")
+                else emptyList<Album>()
+            }
 
-        SearchQueryResult(
-            query = query,
-            songs = songs.distinctBy { it.id },
-            artists = artists.distinctBy { it.id },
-            albums = albums.distinctBy { it.id },
-            playlists = emptyList()
-        )
+            SearchQueryResult(
+                query = query,
+                songs = songs.await().distinctBy { it.id },
+                artists = artists.await().distinctBy { it.id },
+                albums = albums.await().distinctBy { it.id },
+                playlists = emptyList()
+            )
+        }
     }
 
     override suspend fun getTrendingSongs(): List<PlayableTrack> = withContext(Dispatchers.IO) {
@@ -309,38 +326,40 @@ class iTunesMusicProvider(
         }
     }
 
-    private fun fetchArtists(url: String): List<Artist> {
+        private suspend fun fetchArtists(url: String): List<Artist> {
         return try {
             val request = Request.Builder().url(url).build()
-            okHttpClient.newCall(request).execute().use { response ->
+            val rows = okHttpClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return emptyList()
                 val body = response.body?.string() ?: return emptyList()
+                val results = JSONObject(body).optJSONArray("results") ?: return emptyList()
 
-                val json = JSONObject(body)
-                val results = json.optJSONArray("results") ?: return emptyList()
-                val list = mutableListOf<Artist>()
-
+                val parsed = mutableListOf<Triple<Long, String, String>>()
                 for (i in 0 until results.length()) {
                     val item = results.optJSONObject(i) ?: continue
-                    val artistId = item.optLong("artistId", 0L)
                     val name = item.optString("artistName", "")
-                    val genre = item.optString("primaryGenreName", "Music")
-
                     if (name.isNotBlank()) {
-                        val artistArtwork = fetchArtistArtwork(name)
-                        val stableId = if (artistId > 0) "artist_$artistId" else "artist_${name.lowercase().replace(Regex("[^a-z0-9]"), "_")}_${abs(name.hashCode())}"
-                        list.add(
-                            Artist(
-                                id = stableId,
-                                name = name,
-                                genre = genre,
-                                artworkUrl = artistArtwork
+                        parsed.add(
+                            Triple(
+                                item.optLong("artistId", 0L),
+                                name,
+                                item.optString("primaryGenreName", "Music")
                             )
                         )
                     }
                 }
-                list.distinctBy { it.id }
+                parsed
             }
+
+            coroutineScope {
+                rows.map { (artistId, name, genre) ->
+                    async {
+                        val stableId = if (artistId > 0) "artist_$artistId"
+                        else "artist_${name.lowercase().replace(Regex("[^a-z0-9]"), "_")}_${abs(name.hashCode())}"
+                        Artist(id = stableId, name = name, genre = genre, artworkUrl = fetchArtistArtwork(name))
+                    }
+                }.awaitAll()
+            }.distinctBy { it.id }
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {

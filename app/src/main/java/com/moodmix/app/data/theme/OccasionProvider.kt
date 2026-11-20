@@ -57,43 +57,14 @@ object OccasionProvider {
         }
     }
 
+    /** Regional occasions are switched off: always returns null (standard theme). */
+    @Suppress("UNUSED_PARAMETER")
     fun getActiveOccasion(
         countryCode: String,
         calendar: Calendar = Calendar.getInstance(),
         isAutoThemeEnabled: Boolean = true,
         selectedRegion: AppRegion = AppRegion.AUTOMATIC
-    ): Occasion? {
-        if (selectedRegion == AppRegion.STANDARD_DARK) return null
-        if (!isAutoThemeEnabled && selectedRegion == AppRegion.AUTOMATIC) return null
-
-        val targetCountry = if (selectedRegion != AppRegion.AUTOMATIC) {
-            resolveCountryCode(selectedRegion)
-        } else {
-            val resolved = countryCode.uppercase()
-            if (resolved.length == 2) resolved else "UNKNOWN"
-        }
-
-        if (targetCountry == "NONE" || targetCountry == "UNKNOWN") return null
-
-        if (targetCountry == "IN") {
-            if (isDiwaliDate(calendar)) {
-                return Occasion(
-                    type = OccasionType.DIWALI,
-                    name = "Diwali Festival",
-                    regionCode = "IN",
-                    primaryColor = Color(0xFFFFD700), // Gold
-                    secondaryColor = Color(0xFFFF8F00), // Festive Amber-Orange
-                    accentColor = Color(0xFFFF6584), // Bright Festive Pink
-                    festiveMoods = listOf(
-                        "🪔 Diwali Beats" to "Upbeat Indian festive celebration instrumental music",
-                        "✨ Festive Joy" to "Joyful festive folk pop rhythm",
-                        "🌸 Devotional Flow" to "Peaceful devotional sitar ambient music"
-                    )
-                )
-            }
-        }
-        return null
-    }
+    ): Occasion? = null
 
     fun isDiwaliDate(calendar: Calendar): Boolean {
         val istCalendar = Calendar.getInstance(TimeZone.getTimeZone("Asia/Kolkata")).apply {

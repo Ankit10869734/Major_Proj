@@ -9,6 +9,9 @@ import com.moodmix.app.domain.model.PlayableTrack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class LocalLibraryStorage(private val context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
 
@@ -150,18 +153,25 @@ class LocalLibraryStorage(private val context: Context) : SQLiteOpenHelper(conte
             ?.sortedByDescending { it.lastModified() }
             .orEmpty()
 
+                val index = try { ChatStorage(context).trackIndex() } catch (_: Exception) { emptyMap() }
+        val dateFmt = SimpleDateFormat("d MMM, h:mm a", Locale.getDefault())
+
         persistentFiles.map { file ->
-            val isMp3 = file.name.endsWith(".mp3", ignoreCase = true)
-            val genreLabel = if (isMp3) "MP3 AI Audio" else "ACE-Step WAV"
+            val known = index[file.name]
+            val title = if (known != null && known.first.isNotBlank()) friendlyTitle(known.first)
+            else "AI track · ${dateFmt.format(Date(file.lastModified()))}"
+            // Older tracks: estimate from file size (48 kHz stereo 16-bit WAV is about 192 bytes per ms).
+            val durationMs = if (known != null && known.second > 0) known.second * 1000L
+            else ((file.length() - 44L).coerceAtLeast(0L) / 192L)
             PlayableTrack(
                 id = file.name,
-                title = file.nameWithoutExtension.replace('_', ' '),
+                title = title,
                 artist = "MoodMix AI",
                 album = "Generated Creations",
                 artworkUrl = null,
                 audioUri = Uri.fromFile(file).toString(),
-                genre = genreLabel,
-                durationMs = 30000L,
+                genre = "AI generated",
+                durationMs = durationMs,
                 isPreview = false,
                 isGenerated = true,
                 addedTimestamp = file.lastModified()

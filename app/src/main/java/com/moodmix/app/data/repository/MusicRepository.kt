@@ -16,6 +16,8 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 
 class MusicRepository private constructor(context: Context) {
 
@@ -44,32 +46,48 @@ class MusicRepository private constructor(context: Context) {
         _libraryUpdateSignal.tryEmit(Unit)
     }
 
-    suspend fun loadDiscoverContent(): DiscoverContent = withContext(Dispatchers.IO) {
-        val history = storage.getRecentlyPlayedTracks()
-        val trending = provider.getTrendingSongs()
-        val artists = provider.getPopularArtists()
-        val albums = provider.getNewReleases()
-        val playlists = provider.getFeaturedPlaylists()
-        val moodTracks = provider.getMoodTracks("calm study")
+    suspend fun loadDiscoverContent(moodTerm: String? = null): DiscoverContent = withContext(Dispatchers.IO) {
+        coroutineScope {
+            val trending = async { provider.getTrendingSongs() }
+            val artists = async { provider.getPopularArtists() }
+            val albums = async { provider.getNewReleases() }
+            val playlists = async { provider.getFeaturedPlaylists() }
+            val moodTracks = async<List<PlayableTrack>> {
+                if (moodTerm != null) provider.getMoodTracks(moodTerm) else emptyList()
+            }
+            val liked = async { storage.getLikedTracks() }
 
-        val likedList = storage.getLikedTracks()
-        _likedTrackIds.update { likedList.map { track -> track.id }.toSet() }
+            _likedTrackIds.update { liked.await().map { track -> track.id }.toSet() }
 
-        DiscoverContent(
-            recentlyPlayed = history,
-            madeForYou = playlists,
-            trendingSongs = trending,
-            popularArtists = artists,
-            newReleases = albums,
-            moodRecommendations = moodTracks
-        )
+            DiscoverContent(
+                madeForYou = playlists.await(),
+                trendingSongs = trending.await(),
+                popularArtists = artists.await(),
+                newReleases = albums.await(),
+                moodRecommendations = moodTracks.await()
+            )
+        }
     }
 
-    suspend fun search(query: String, filter: SearchFilter = SearchFilter.ALL): SearchQueryResult = withContext(Dispatchers.IO) {
-        if (query.isNotBlank()) {
+    suspend fun getMoodTracks(term: String): List<PlayableTrack> = withContext(Dispatchers.IO) {
+        provider.getMoodTracks(term)
+    }
+
+    suspend fun search(
+        query: String,
+        filter: SearchFilter = SearchFilter.ALL,
+        recordHistory: Boolean = true
+    ): SearchQueryResult = withContext(Dispatchers.IO) {
+        if (recordHistory && query.isNotBlank()) {
             storage.addSearchQuery(query)
         }
         provider.search(query, filter)
+    }
+
+    suspend fun saveSearchQuery(query: String) = withContext(Dispatchers.IO) {
+        if (query.isNotBlank()) {
+            storage.addSearchQuery(query)
+        }
     }
 
     suspend fun getArtistTopTracks(artistName: String): List<PlayableTrack> = withContext(Dispatchers.IO) {

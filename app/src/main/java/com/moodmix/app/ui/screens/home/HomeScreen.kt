@@ -1,12 +1,12 @@
 package com.moodmix.app.ui.screens.home
 
+import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,15 +14,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -33,7 +31,6 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -53,6 +50,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moodmix.app.data.theme.RegionalThemePreferences
 import com.moodmix.app.domain.model.Album
 import com.moodmix.app.domain.model.Artist
+import com.moodmix.app.domain.model.PlayableTrack
 import com.moodmix.app.domain.model.Playlist
 import com.moodmix.app.domain.model.RegionalThemeState
 import com.moodmix.app.playback.PlayerController
@@ -65,15 +63,8 @@ import com.moodmix.app.ui.components.PlaylistDetailSheet
 import com.moodmix.app.ui.components.SectionHeader
 import com.moodmix.app.ui.components.ShimmerBox
 import com.moodmix.app.ui.components.TrackCard
-import com.moodmix.app.ui.components.TrackRow
-import java.util.Calendar
 
-@Immutable
-data class GreetingAndSplash(
-    val greeting: String,
-    val splashText: String
-)
-
+// Kept in case other files still reference it. Safe to delete if nothing does.
 val baseMoodItems = listOf(
     "😊 Happy" to "Upbeat happy energetic pop track",
     "😌 Calm" to "Peaceful calm ambient acoustic music",
@@ -91,34 +82,23 @@ fun HomeScreen(
 ) {
     val context = LocalContext.current
     val regionalThemePreferences = remember { RegionalThemePreferences.getInstance(context) }
-    val regionalThemeState by regionalThemePreferences.regionalThemeState.collectAsStateWithLifecycle(initialValue = RegionalThemeState())
+    val regionalThemeState by regionalThemePreferences.regionalThemeState
+        .collectAsStateWithLifecycle(initialValue = RegionalThemeState())
 
     val snackbarHostState = remember { SnackbarHostState() }
-    val headerData = remember { getDynamicGreetingAndSplash() }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val header = uiState.header
 
     val currentTrackId by PlayerController.currentTrackId.collectAsStateWithLifecycle()
     val isPlaying by PlayerController.isPlaying.collectAsStateWithLifecycle()
-    val isBuffering by PlayerController.isBuffering.collectAsStateWithLifecycle()
 
     var selectedAlbum by remember { mutableStateOf<Album?>(null) }
     var selectedArtist by remember { mutableStateOf<Artist?>(null) }
     var selectedPlaylist by remember { mutableStateOf<Playlist?>(null) }
 
-    // Recommendation Prompt selecting contextually based on time of day
-    val recommendedPrompt = remember(headerData.greeting) {
-        val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
-        when (hour) {
-            in 0..4 -> "quiet ambient music for sleep and relaxation"
-            in 5..11 -> "upbeat acoustic morning music for focus"
-            in 12..16 -> "energetic electronic beats for afternoon work"
-            else -> "calm acoustic melody for evening relaxation"
-        }
-    }
-
-    val displayMoodItems = remember(regionalThemeState.activeOccasion) {
+    val displayMoodItems = remember(header.moods, regionalThemeState.activeOccasion) {
         val festiveMoods = regionalThemeState.activeOccasion?.festiveMoods ?: emptyList()
-        festiveMoods + baseMoodItems
+        festiveMoods + header.moods
     }
 
     LaunchedEffect(Unit) {
@@ -129,280 +109,253 @@ fun HomeScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = Color.Transparent
     ) { innerPadding ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
-                .verticalScroll(rememberScrollState())
                 .padding(paddingValues)
-                .padding(innerPadding)
-                .padding(horizontal = 20.dp)
+                .padding(innerPadding),
+            contentPadding = PaddingValues(top = 20.dp, bottom = 32.dp)
         ) {
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Clean Header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = headerData.greeting,
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = headerData.splashText,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+            // Header (no AI button)
+            item(key = "header") {
+                Crossfade(
+                    targetState = header,
+                    label = "home_header",
+                    modifier = Modifier.padding(horizontal = 20.dp)
+                ) { h ->
+                    Column {
+                        Text(
+                            text = h.greeting,
+                            style = MaterialTheme.typography.headlineLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = h.splashText,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
-
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.AutoAwesome,
-                        contentDescription = "MoodMix AI Logo",
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
+                Spacer(modifier = Modifier.height(20.dp))
             }
 
-            // Festive Occasion Badge if Active
+            // Festive badge
             if (regionalThemeState.isFestiveActive) {
-                Spacer(modifier = Modifier.height(14.dp))
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                    )
-                ) {
-                    Row(
+                item(key = "festive") {
+                    Card(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(horizontal = 20.dp)
+                            .fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer
+                        )
                     ) {
                         Text(
                             text = "✨ ${regionalThemeState.activeOccasion?.name ?: "Festive Theme"} Active",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
                         )
                     }
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // AI Prompt Recommendation Card (Displayed prompt matches clicked prompt & uses theme contrast colors!)
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable {
-                        onNavigateToGenerate(recommendedPrompt)
-                    },
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.Transparent)
-            ) {
-                Column(
+            // AI prompt card (personalised)
+            item(key = "ai_card") {
+                Box(
                     modifier = Modifier
+                        .padding(horizontal = 20.dp)
                         .fillMaxWidth()
+                        .clip(RoundedCornerShape(24.dp))
                         .background(
                             Brush.linearGradient(
                                 listOf(
-                                    MaterialTheme.colorScheme.secondary.copy(alpha = 0.85f),
-                                    MaterialTheme.colorScheme.tertiary.copy(alpha = 0.85f)
+                                    MaterialTheme.colorScheme.secondary.copy(alpha = 0.9f),
+                                    MaterialTheme.colorScheme.tertiary.copy(alpha = 0.9f)
                                 )
                             )
                         )
-                        .padding(20.dp)
+                        .clickable { onNavigateToGenerate(header.aiPrompt) }
+                        .padding(22.dp)
                 ) {
-                    Text(
-                        text = "Ask MoodMix AI",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSecondary
-                    )
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Text(
-                        text = "Try \"$recommendedPrompt\"",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSecondary.copy(alpha = 0.9f)
-                    )
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    Text(
-                        text = "Start creation request →",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSecondary
-                    )
+                    Column {
+                        Text(
+                            text = "Create with MoodMix AI",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSecondary
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Try \"${header.aiPrompt}\"",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSecondary.copy(alpha = 0.9f),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text(
+                            text = "Start creating →",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSecondary
+                        )
+                    }
                 }
+                Spacer(modifier = Modifier.height(28.dp))
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Your Mood Section
-            SectionHeader(title = if (regionalThemeState.isFestiveActive) "Festive & Mood Vibes" else "Your Mood")
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                items(
-                    items = displayMoodItems,
-                    key = { it.first }
-                ) { (label, promptText) ->
-                    MoodChip(
-                        text = label,
-                        onClick = {
-                            onNavigateToGenerate(promptText)
-                        }
-                    )
+            // Mood chips (dynamic)
+            item(key = "moods") {
+                SectionTitle(
+                    if (regionalThemeState.isFestiveActive) "Festive & Mood Vibes" else header.moodSectionTitle
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(
+                        items = displayMoodItems,
+                        key = { it.first }
+                    ) { (label, promptText) ->
+                        MoodChip(
+                            text = label,
+                            onClick = { onNavigateToGenerate(promptText) }
+                        )
+                    }
                 }
+                Spacer(modifier = Modifier.height(28.dp))
             }
-
-            Spacer(modifier = Modifier.height(28.dp))
 
             if (uiState.isLoading) {
-                SectionHeader(title = "Loading Discover Feed...")
-                Spacer(modifier = Modifier.height(12.dp))
-                ShimmerBox(modifier = Modifier.fillMaxWidth().height(160.dp))
+                item(key = "loading") {
+                    SectionTitle("Loading your feed...")
+                    Spacer(modifier = Modifier.height(12.dp))
+                    ShimmerBox(
+                        modifier = Modifier
+                            .padding(horizontal = 20.dp)
+                            .fillMaxWidth()
+                            .height(160.dp)
+                    )
+                }
             } else if (uiState.errorMessage != null) {
-                ErrorState(
-                    message = uiState.errorMessage!!,
-                    onRetry = { viewModel.loadDiscoverContent(forceRefresh = true) }
-                )
+                item(key = "error") {
+                    Box(modifier = Modifier.padding(horizontal = 20.dp)) {
+                        ErrorState(
+                            message = uiState.errorMessage!!,
+                            onRetry = { viewModel.loadDiscoverContent(forceRefresh = true) }
+                        )
+                    }
+                }
             } else {
                 val content = uiState.content
+                val feedTitle = header.feedTitle
 
-                // 1. Recently Played Section
-                if (content.recentlyPlayed.isNotEmpty()) {
-                    SectionHeader(title = "Recently Played")
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        content.recentlyPlayed.take(3).forEach { track ->
-                            val isActive = (track.id == currentTrackId)
-                            TrackRow(
-                                title = track.title,
-                                subtitle = track.artist,
-                                coverModel = track.artworkUrl,
-                                isActive = isActive,
-                                isPlaying = isPlaying,
-                                isBuffering = isBuffering,
-                                onClick = { viewModel.playTrack(track, content.recentlyPlayed) }
-                            )
-                        }
+                // 1. Personal row: "Because you searched ..."
+                if (feedTitle != null && content.moodRecommendations.isNotEmpty()) {
+                    item(key = "personal_feed") {
+                        TrackCarousel(
+                            title = feedTitle,
+                            tracks = content.moodRecommendations,
+                            currentTrackId = currentTrackId,
+                            isPlaying = isPlaying,
+                            onTrackClick = { viewModel.playTrack(it, content.moodRecommendations) }
+                        )
                     }
-                    Spacer(modifier = Modifier.height(28.dp))
                 }
 
-                // 2. Trending Songs Carousel
+                // 2. Trending
                 if (content.trendingSongs.isNotEmpty()) {
-                    SectionHeader(title = "Trending Songs")
-                    Spacer(modifier = Modifier.height(12.dp))
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        itemsIndexed(
-                            items = content.trendingSongs,
-                            key = { index, track -> "${track.id}_$index" }
-                        ) { _, track ->
-                            val isActive = (track.id == currentTrackId)
-                            TrackCard(
-                                title = track.title,
-                                subtitle = track.artist,
-                                coverModel = track.artworkUrl,
-                                isActive = isActive,
-                                isPlaying = isPlaying,
-                                onClick = { viewModel.playTrack(track, content.trendingSongs) }
-                            )
-                        }
+                    item(key = "trending") {
+                        TrackCarousel(
+                            title = "Trending Songs",
+                            tracks = content.trendingSongs,
+                            currentTrackId = currentTrackId,
+                            isPlaying = isPlaying,
+                            onTrackClick = { viewModel.playTrack(it, content.trendingSongs) }
+                        )
                     }
-                    Spacer(modifier = Modifier.height(28.dp))
                 }
 
-                // 3. Artists from Top Charts
+                // 3. Artists
                 if (content.popularArtists.isNotEmpty()) {
-                    SectionHeader(title = "Artists from Top Charts")
-                    Spacer(modifier = Modifier.height(12.dp))
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        itemsIndexed(
-                            items = content.popularArtists,
-                            key = { index, artist -> "${artist.id}_$index" }
-                        ) { _, artist ->
-                            ArtistCard(artist = artist, onClick = { selectedArtist = artist })
+                    item(key = "artists") {
+                        SectionTitle("Artists from Top Charts")
+                        Spacer(modifier = Modifier.height(12.dp))
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 20.dp),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            itemsIndexed(
+                                items = content.popularArtists,
+                                key = { index, artist -> "${artist.id}_$index" }
+                            ) { _, artist ->
+                                ArtistCard(artist = artist, onClick = { selectedArtist = artist })
+                            }
                         }
+                        Spacer(modifier = Modifier.height(28.dp))
                     }
-                    Spacer(modifier = Modifier.height(28.dp))
                 }
 
-                // 4. New Releases
+                // 4. New releases
                 if (content.newReleases.isNotEmpty()) {
-                    SectionHeader(title = "New Album Releases")
-                    Spacer(modifier = Modifier.height(12.dp))
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        itemsIndexed(
-                            items = content.newReleases,
-                            key = { index, album -> "${album.id}_$index" }
-                        ) { _, album ->
-                            TrackCard(
-                                title = album.title,
-                                subtitle = "${album.artist} • ${album.releaseYear ?: "New"}",
-                                coverModel = album.artworkUrl,
-                                onClick = { selectedAlbum = album }
-                            )
+                    item(key = "new_releases") {
+                        SectionTitle("New Album Releases")
+                        Spacer(modifier = Modifier.height(12.dp))
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 20.dp),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            itemsIndexed(
+                                items = content.newReleases,
+                                key = { index, album -> "${album.id}_$index" }
+                            ) { _, album ->
+                                TrackCard(
+                                    title = album.title,
+                                    subtitle = "${album.artist} • ${album.releaseYear ?: "New"}",
+                                    coverModel = album.artworkUrl,
+                                    onClick = { selectedAlbum = album }
+                                )
+                            }
                         }
+                        Spacer(modifier = Modifier.height(28.dp))
                     }
-                    Spacer(modifier = Modifier.height(28.dp))
                 }
 
-                // 5. Featured Playlists
+                // 5. Made for you
                 if (content.madeForYou.isNotEmpty()) {
-                    SectionHeader(title = "Made For You")
-                    Spacer(modifier = Modifier.height(12.dp))
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        itemsIndexed(
-                            items = content.madeForYou,
-                            key = { index, playlist -> "${playlist.id}_$index" }
-                        ) { _, playlist ->
-                            TrackCard(
-                                title = playlist.title,
-                                subtitle = playlist.description ?: "Curated flow",
-                                coverModel = playlist.artworkUrl,
-                                onClick = { selectedPlaylist = playlist }
-                            )
+                    item(key = "made_for_you") {
+                        SectionTitle("Made For You")
+                        Spacer(modifier = Modifier.height(12.dp))
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 20.dp),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            itemsIndexed(
+                                items = content.madeForYou,
+                                key = { index, playlist -> "${playlist.id}_$index" }
+                            ) { _, playlist ->
+                                TrackCard(
+                                    title = playlist.title,
+                                    subtitle = playlist.description ?: "Curated flow",
+                                    coverModel = playlist.artworkUrl,
+                                    onClick = { selectedPlaylist = playlist }
+                                )
+                            }
                         }
                     }
-                    Spacer(modifier = Modifier.height(28.dp))
                 }
             }
-
-            Spacer(modifier = Modifier.height(24.dp))
         }
 
-        // Detail Bottom Sheets
+        // Detail bottom sheets
         if (selectedAlbum != null) {
             AlbumDetailSheet(
                 album = selectedAlbum!!,
@@ -423,6 +376,46 @@ fun HomeScreen(
                 onDismiss = { selectedPlaylist = null }
             )
         }
+    }
+}
+
+@Composable
+private fun SectionTitle(title: String) {
+    Box(modifier = Modifier.padding(horizontal = 20.dp)) {
+        SectionHeader(title = title)
+    }
+}
+
+@Composable
+private fun TrackCarousel(
+    title: String,
+    tracks: List<PlayableTrack>,
+    currentTrackId: String?,
+    isPlaying: Boolean,
+    onTrackClick: (PlayableTrack) -> Unit
+) {
+    Column {
+        SectionTitle(title)
+        Spacer(modifier = Modifier.height(12.dp))
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            itemsIndexed(
+                items = tracks,
+                key = { index, track -> "${track.id}_$index" }
+            ) { _, track ->
+                TrackCard(
+                    title = track.title,
+                    subtitle = track.artist,
+                    coverModel = track.artworkUrl,
+                    isActive = (track.id == currentTrackId),
+                    isPlaying = isPlaying,
+                    onClick = { onTrackClick(track) }
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(28.dp))
     }
 }
 
@@ -472,44 +465,4 @@ private fun ArtistCard(
             overflow = TextOverflow.Ellipsis
         )
     }
-}
-
-private fun getDynamicGreetingAndSplash(): GreetingAndSplash {
-    val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
-
-    val (greetings, splashTexts) = when (hour) {
-        in 0..4 -> {
-            listOf("Late night session 🌙", "Late night vibes 🌌", "Midnight hours 🦉") to listOf(
-                "Want some music to drift off to sleep?",
-                "Soft melodies for quiet late-night thoughts ✨",
-                "The world is asleep, but the music is alive 🎧"
-            )
-        }
-        in 5..11 -> {
-            listOf("Good morning 🌅", "Morning rhythm ☕", "Sunrise beats ☀️") to listOf(
-                "Start your day with the perfect rhythm ☕",
-                "Fresh morning coffee & fresh beats ☀️",
-                "Sunrise melodies to power your morning 🌄"
-            )
-        }
-        in 12..16 -> {
-            listOf("Good afternoon ☀️", "Midday flow 🚀", "Afternoon vibes ⚡") to listOf(
-                "Midday boost to keep you in the flow 🚀",
-                "Unwind with your afternoon soundtrack ☕",
-                "High focus or relaxing chill beats?"
-            )
-        }
-        else -> { // 17..23
-            listOf("Good evening 🌆", "Evening chill 🕯️", "Twilight soundscape 🌙") to listOf(
-                "Time to relax and tune into your vibe 🌆",
-                "Unwinding after a long day 🎶",
-                "Let the music take over the night ✨"
-            )
-        }
-    }
-
-    val selectedGreeting = greetings.random()
-    val selectedSplash = splashTexts.random()
-
-    return GreetingAndSplash(selectedGreeting, selectedSplash)
 }

@@ -30,7 +30,8 @@ data class LyricsIntelligenceUiState(
     val isTranslating: Boolean = false,
     val translationStatusText: String = "",
     val translatedLyricsText: String? = null,
-    val translationError: String? = null
+    val translationError: String? = null,
+    val analysisViaCloud: Boolean = false
 )
 
 class ToolsViewModel : ViewModel() {
@@ -96,16 +97,18 @@ class ToolsViewModel : ViewModel() {
         viewModelScope.launch {
             _lyricsState.update { it.copy(isAnalyzing = true, analysisError = null) }
             try {
+                var cloud = true
                 val result = try {
                     QwenApi.analyzeLyrics(lyrics)
                 } catch (_: Exception) {
+                    cloud = false
                     withContext(Dispatchers.Default) {
                         LyricsAnalyzer.analyze(lyrics)
                     }
                 }
-                _lyricsState.update { it.copy(analysisResult = result, isAnalyzing = false) }
+                _lyricsState.update { it.copy(analysisResult = result, isAnalyzing = false, analysisViaCloud = cloud) }
             } catch (e: Exception) {
-                _lyricsState.update { it.copy(analysisError = e.message ?: "Analysis failed.", isAnalyzing = false) }
+                _lyricsState.update { it.copy(analysisError = "Couldn't analyze these lyrics. Please try again.", isAnalyzing = false) }
             }
         }
     }
@@ -123,7 +126,7 @@ class ToolsViewModel : ViewModel() {
                     isTranslating = true,
                     translationError = null,
                     translatedLyricsText = null,
-                    translationStatusText = "Downloading language model..."
+                    translationStatusText = "Preparing translation…"
                 )
             }
             try {
@@ -137,7 +140,12 @@ class ToolsViewModel : ViewModel() {
                 )
                 _lyricsState.update { it.copy(translatedLyricsText = translated, isTranslating = false) }
             } catch (e: Exception) {
-                _lyricsState.update { it.copy(translationError = e.message ?: "Translation failed.", isTranslating = false) }
+                _lyricsState.update {
+                    it.copy(
+                        translationError = if (e is IllegalArgumentException) (e.message ?: "Translation failed.") else "Translation failed. Check your connection for the first download and try again.",
+                        isTranslating = false
+                    )
+                }
             }
         }
     }

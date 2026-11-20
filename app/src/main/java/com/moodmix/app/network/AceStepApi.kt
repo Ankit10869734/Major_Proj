@@ -1,6 +1,7 @@
 package com.moodmix.app.network
 
 import android.content.Context
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -18,22 +19,30 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 /**
- * ACE-Step 1.5 Turbo Music Generation Network Client.
- * Connects to Kaggle/ngrok ACE-Step server to release tasks, poll status, download WAV, and manage 7-day cache storage.
+ * ACE-Step 1.5 Turbo client (Kaggle + ngrok).
  */
 object AceStepApi {
 
+    private const val POLL_INTERVAL_MS = 4_000L
+    private const val MAX_WAIT_MS = 20 * 60 * 1000L
+    private const val MAX_CONSECUTIVE_POLL_ERRORS = 15
+
     private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
+        .readTimeout(90, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
+        .build()
+
+    // A 180 s WAV is about 35 MB, so give downloads more time.
+    private val downloadClient: OkHttpClient = okHttpClient.newBuilder()
+        .readTimeout(180, TimeUnit.SECONDS)
         .build()
 
     private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
-    /**
-     * Cleans cacheDir/moodmix_generated/ deleting files older than 7 days (7 * 24 * 60 * 60 * 1000L ms).
-     */
+    /** Errors that must stop polling immediately (not retried). */
+    private class FatalGenerationException(message: String) : IOException(message)
+
     fun cleanExpired7DayCache(context: Context) {
         try {
             val cacheFolder = File(context.cacheDir, "moodmix_generated")
@@ -41,21 +50,19 @@ object AceStepApi {
                 val now = System.currentTimeMillis()
                 val sevenDaysMs = 7 * 24 * 60 * 60 * 1000L
                 cacheFolder.listFiles()?.forEach { file ->
-                    if (file.isFile && (now - file.lastModified() > sevenDaysMs)) {
-                        file.delete()
-                    }
+                    if (file.isFile && (now - file.lastModified() > sevenDaysMs)) file.delete()
                 }
             }
         } catch (_: Exception) {
         }
     }
 
-    /**
-     * Executes music generation via ACE-Step 1.5 Turbo.
-     * 1. Submits release_task POST with exact prompt and duration slider seconds.
-     * 2. Polls query_result POST asynchronously.
-     * 3. Downloads generated WAV file to persistent generated_music folder.
-     */
+    /** User idea + style tags the model responds to well. */
+    private fun buildCaption(userPrompt: String): String {
+        val idea = userPrompt.trim().take(400)
+        return "$idea. Instrumental, rich full arrangement, polished studio recording, high quality."
+    }
+
     suspend fun generateTrack(
         context: Context,
         prompt: String,
@@ -63,20 +70,18 @@ object AceStepApi {
         onStatusUpdate: ((String) -> Unit)? = null
     ): File = withContext(Dispatchers.IO) {
         cleanExpired7DayCache(context)
-
-        onStatusUpdate?.invoke("Submitting ACE-Step task...")
-
-        val cleanPrompt = prompt.trim().take(400)
+        onStatusUpdate?.invoke("Sending your idea to the studio…")
 
         val releaseJson = JSONObject().apply {
-            put("prompt", cleanPrompt)
-            put("lyrics", "")
+            put("prompt", buildCaption(prompt))
+            put("lyrics", "[Instrumental]")
             put("thinking", true)
-            put("audio_duration", durationSeconds.coerceIn(5, 30))
+            put("audio_duration", durationSeconds.coerceIn(30, 120))
             put("audio_format", "wav")
             put("model", "acestep-v15-turbo")
             put("inference_steps", 8)
             put("batch_size", 1)
+            put("use_random_seed", true)
         }
 
         val releaseRequest = Request.Builder()
@@ -90,21 +95,17 @@ object AceStepApi {
             if (!response.isSuccessful) {
                 throw IOException("ACE-Step release_task returned HTTP ${response.code}")
             }
-            val body = response.body?.string() ?: throw IOException("Empty response from ACE-Step release_task")
-            val json = JSONObject(body)
-            val data = json.optJSONObject("data") ?: throw IOException("Missing data object in ACE-Step release_task response")
+            val body = response.body?.string() ?: throw IOException("Empty response from ACE-Step")
+            val data = JSONObject(body).optJSONObject("data")
+                ?: throw IOException("Missing data object in ACE-Step response")
             val id = data.optString("task_id", "")
-            if (id.isBlank()) throw IOException("ACE-Step did not return a valid task_id")
+            if (id.isBlank()) throw IOException("ACE-Step did not return a task id")
             id
         }
 
-        onStatusUpdate?.invoke("Task queued (ID: ${taskId.take(8)}...)")
-
-        // Step 2: Poll query_result
         val audioFilePath = pollQueryResult(taskId, onStatusUpdate)
 
-        // Step 3: Download WAV file
-        onStatusUpdate?.invoke("Downloading generated WAV...")
+        onStatusUpdate?.invoke("Downloading your track…")
         val fullAudioUrl = if (audioFilePath.startsWith("http://") || audioFilePath.startsWith("https://")) {
             audioFilePath
         } else {
@@ -113,89 +114,92 @@ object AceStepApi {
             "$base$path"
         }
 
-        val downloadedFile = downloadWavToCache(context, fullAudioUrl, taskId)
-        onStatusUpdate?.invoke("Generation complete!")
-        downloadedFile
+        val file = downloadWavToCache(context, fullAudioUrl, taskId)
+        onStatusUpdate?.invoke("Done!")
+        file
+    }
+
+    private fun clock(ms: Long): String {
+        val s = ms / 1000
+        return "%d:%02d".format(s / 60, s % 60)
     }
 
     private suspend fun pollQueryResult(
         taskId: String,
         onStatusUpdate: ((String) -> Unit)?
-    ): String = withContext(Dispatchers.IO) {
-        val queryJson = JSONObject().apply {
-            put("task_id_list", JSONArray().apply { put(taskId) })
-        }
+    ): String {
+        val queryBody = JSONObject().put("task_id_list", JSONArray().put(taskId)).toString()
+        val startedAt = System.currentTimeMillis()
+        var consecutiveErrors = 0
 
-        val pollRequest = Request.Builder()
-            .url(ApiConfig.ACESTEP_QUERY_RESULT_ENDPOINT)
-            .header("Content-Type", "application/json")
-            .header("ngrok-skip-browser-warning", "true")
-            .post(queryJson.toString().toRequestBody(JSON_MEDIA_TYPE))
-            .build()
-
-        var pollAttempts = 0
-        val maxAttempts = 120 // Up to 10 minutes polling (every 5 seconds)
-
-        while (pollAttempts < maxAttempts) {
-            pollAttempts++
-            delay(5000)
+        while (true) {
+            delay(POLL_INTERVAL_MS) // cancellation point
+            val elapsed = System.currentTimeMillis() - startedAt
+            if (elapsed > MAX_WAIT_MS) {
+                throw IOException("The server took longer than 20 minutes. Try a shorter track.")
+            }
 
             try {
-                val response = okHttpClient.newCall(pollRequest.newBuilder().build()).execute()
-                response.use { resp ->
-                    if (!resp.isSuccessful) return@use
+                val request = Request.Builder()
+                    .url(ApiConfig.ACESTEP_QUERY_RESULT_ENDPOINT)
+                    .header("Content-Type", "application/json")
+                    .header("ngrok-skip-browser-warning", "true")
+                    .post(queryBody.toRequestBody(JSON_MEDIA_TYPE))
+                    .build()
 
-                    val body = resp.body?.string() ?: return@use
-                    val json = JSONObject(body)
-                    val dataArray = json.optJSONArray("data")
-                    if (dataArray != null && dataArray.length() > 0) {
-                        val firstItem = dataArray.getJSONObject(0)
-                        val status = firstItem.optInt("status", 0)
+                val item: JSONObject? = okHttpClient.newCall(request).execute().use { resp ->
+                    if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
+                    JSONObject(resp.body?.string().orEmpty()).optJSONArray("data")?.optJSONObject(0)
+                }
+                consecutiveErrors = 0
 
-                        when (status) {
-                            0 -> {
-                                val progress = firstItem.optDouble("progress", 0.0)
-                                val progPct = (progress * 100).toInt()
-                                onStatusUpdate?.invoke("Synthesizing audio ($progPct%)...")
+                if (item == null) {
+                    onStatusUpdate?.invoke("Waiting in queue… ${clock(elapsed)}")
+                    continue
+                }
+
+                when (item.optInt("status", 0)) {
+                    1 -> {
+                        val path = extractFilePathFromResult(item.optString("result", ""))
+                        if (path.isBlank()) throw FatalGenerationException("The server finished but returned no audio file.")
+                        return path
+                    }
+                    2 -> throw FatalGenerationException("The server could not generate this track. Try a different description.")
+                    else -> {
+                        val extra = item.optString("progress_text", "").take(60)
+                        onStatusUpdate?.invoke(
+                            buildString {
+                                append("Composing… ").append(clock(elapsed))
+                                if (extra.isNotBlank()) append(" · ").append(extra)
                             }
-                            1 -> {
-                                val resultStr = firstItem.optString("result", "")
-                                val filePath = extractFilePathFromResult(resultStr)
-                                if (filePath.isNotBlank()) {
-                                    return@withContext filePath
-                                } else {
-                                    throw IOException("ACE-Step task succeeded but returned no audio file path")
-                                }
-                            }
-                            2 -> {
-                                throw IOException("ACE-Step audio generation task failed (Status 2)")
-                            }
-                        }
+                        )
                     }
                 }
+            } catch (e: FatalGenerationException) {
+                throw e
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                if (e is IOException && e.message?.contains("failed") == true) {
-                    throw e
+                consecutiveErrors++
+                if (consecutiveErrors >= MAX_CONSECUTIVE_POLL_ERRORS) {
+                    throw IOException("Lost connection to the music server.")
                 }
-                onStatusUpdate?.invoke("Waiting for backend worker... ($pollAttempts)")
+                onStatusUpdate?.invoke("Reconnecting… ${clock(elapsed)}")
             }
         }
-
-        throw IOException("ACE-Step music generation polling timed out after 10 minutes.")
     }
 
     private fun extractFilePathFromResult(resultStr: String): String {
         return try {
             val trimmed = resultStr.trim()
-            if (trimmed.startsWith("[")) {
-                val arr = JSONArray(trimmed)
-                if (arr.length() > 0) {
-                    arr.getJSONObject(0).optString("file", "")
-                } else ""
-            } else if (trimmed.startsWith("{")) {
-                val obj = JSONObject(trimmed)
-                obj.optString("file", "")
-            } else ""
+            when {
+                trimmed.startsWith("[") -> {
+                    val arr = JSONArray(trimmed)
+                    if (arr.length() > 0) arr.getJSONObject(0).optString("file", "") else ""
+                }
+                trimmed.startsWith("{") -> JSONObject(trimmed).optString("file", "")
+                else -> ""
+            }
         } catch (_: Exception) {
             ""
         }
@@ -208,43 +212,28 @@ object AceStepApi {
             .get()
             .build()
 
-        val response = okHttpClient.newCall(request).execute()
-        response.use { resp ->
-            if (!resp.isSuccessful) {
-                throw IOException("Failed to download generated audio: HTTP ${resp.code}")
-            }
+        return downloadClient.newCall(request).execute().use { resp ->
+            if (!resp.isSuccessful) throw IOException("Failed to download audio: HTTP ${resp.code}")
+            val body = resp.body ?: throw IOException("Empty audio stream from server")
 
-            val body = resp.body ?: throw IOException("Empty audio stream returned from server")
-            val cacheFolder = File(context.cacheDir, "moodmix_generated")
-            if (!cacheFolder.exists()) {
-                cacheFolder.mkdirs()
-            }
+            val cacheFolder = File(context.cacheDir, "moodmix_generated").apply { mkdirs() }
+            val persistentFolder = File(context.filesDir, "generated_music").apply { mkdirs() }
 
-            val persistentFolder = File(context.filesDir, "generated_music")
-            if (!persistentFolder.exists()) {
-                persistentFolder.mkdirs()
-            }
-
-            val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-            val fileName = "MoodMix_${timeStamp}_${taskId.take(6)}.wav"
+            val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+            val fileName = "MoodMix_${stamp}_${taskId.take(6)}.wav"
             val cacheFile = File(cacheFolder, fileName)
             val persistentFile = File(persistentFolder, fileName)
 
             body.byteStream().use { input ->
-                cacheFile.outputStream().use { output ->
-                    input.copyTo(output)
-                }
+                cacheFile.outputStream().use { output -> input.copyTo(output) }
             }
-
-            if (!cacheFile.exists() || (cacheFile.length() == 0L)) {
-                throw IOException("Downloaded WAV file is empty.")
-            }
+            if (cacheFile.length() == 0L) throw IOException("Downloaded WAV file is empty.")
 
             try {
                 cacheFile.copyTo(persistentFile, overwrite = true)
-            } catch (_: Exception) {}
-
-            return persistentFile
+            } catch (_: Exception) {
+                cacheFile
+            }
         }
     }
 }

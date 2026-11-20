@@ -188,20 +188,20 @@ object QwenApi {
                 } else ""
 
                 fallbackHeuristic.copy(
-                    summary = "Qwen LLM: $explanation$themesText",
-                    sentiment = "Qwen AI: ${sentiment.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.ROOT) else it.toString() }}",
+                    summary = "$explanation$themesText",
+                    sentiment = sentiment.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.ROOT) else it.toString() },
                     sentimentScore = if (sentiment.lowercase(Locale.ROOT).contains("positive")) 0.85f else if (sentiment.lowercase(Locale.ROOT).contains("negative")) -0.85f else 0.0f
                 )
             } else {
                 fallbackHeuristic.copy(
-                    summary = "Qwen LLM: $resultText",
-                    sentiment = "Qwen AI Analysis"
+                    summary = resultText,
+                    sentiment = "AI analysis"
                 )
             }
         } catch (_: Exception) {
             fallbackHeuristic.copy(
-                summary = "Qwen LLM: $resultText",
-                sentiment = "Qwen AI Analysis"
+                summary = resultText,
+                sentiment = "AI analysis"
             )
         }
     }

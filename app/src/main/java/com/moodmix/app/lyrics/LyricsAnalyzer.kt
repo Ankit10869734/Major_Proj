@@ -179,15 +179,15 @@ object LyricsAnalyzer {
 
         val totalHits = posHits + negHits
         val (sentiment, sentimentScore) = when {
-            isNonEnglishScript -> "Unavailable (English lexicon only)" to 0f
-            totalHits == 0 -> "Neutral (Heuristic)" to 0f
+            isNonEnglishScript -> "Not available for this language" to 0f
+            totalHits == 0 -> "Neutral" to 0f
             else -> {
                 val score = (posHits - negHits).toFloat() / totalHits
                 val label = when {
-                    posHits > 0 && negHits > 0 && abs(posHits - negHits) <= 1 -> "Mixed (Heuristic)"
-                    score > 0.15f -> "Positive (Heuristic)"
-                    score < -0.15f -> "Negative (Heuristic)"
-                    else -> "Neutral (Heuristic)"
+                    posHits > 0 && negHits > 0 && abs(posHits - negHits) <= 1 -> "Mixed"
+                    score > 0.15f -> "Positive"
+                    score < -0.15f -> "Negative"
+                    else -> "Neutral"
                 }
                 label to score
             }
@@ -217,9 +217,9 @@ object LyricsAnalyzer {
         val summaryText = buildString {
             append("The lyrics contain $lineCount line(s) and $wordCount total word(s) ($uniqueWordCount unique word(s)), averaging ${"%.1f".format(avgSyllables)} estimated syllables per line. ")
             if (isNonEnglishScript) {
-                append("Sentiment analysis is unavailable for non-English lyrics (English lexicon only). ")
+                append("Sentiment isn't available for this language. ")
             } else {
-                append("Heuristic sentiment score is ${"%.2f".format(sentimentScore)} ($sentiment). ")
+                append("Overall sentiment: $sentiment. ")
             }
             if (topWords.isNotEmpty()) {
                 append("Top keywords: ${topWords.take(3).joinToString(", ") { it.first }}. ")

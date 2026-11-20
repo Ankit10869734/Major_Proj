@@ -1,17 +1,14 @@
 package com.moodmix.app.ui.screens.search
 
-import android.Manifest
-import android.content.Context
-import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Bundle
-import android.speech.RecognitionListener
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,29 +28,27 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.NorthWest
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -63,13 +58,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moodmix.app.data.repository.MusicRepository
@@ -84,63 +81,112 @@ import com.moodmix.app.ui.components.EmptyState
 import com.moodmix.app.ui.components.ErrorState
 import com.moodmix.app.ui.components.LoadingState
 import com.moodmix.app.ui.components.MoodChip
-import com.moodmix.app.ui.components.SearchField
+import com.moodmix.app.ui.components.NeonSearchBar
+import com.moodmix.app.ui.components.PillSearchInput
 import com.moodmix.app.ui.components.SectionHeader
 import com.moodmix.app.ui.components.TrackCard
 import com.moodmix.app.ui.components.TrackRow
-import java.util.Locale
-
-enum class VoiceState {
-    IDLE,
-    LISTENING,
-    PROCESSING,
-    RESULT,
-    ERROR
-}
+import com.moodmix.app.ui.theme.MintPrimary
+import kotlinx.coroutines.delay
 
 @Immutable
 data class SearchCategory(
     val title: String,
     val promptText: String,
-    val gradientColors: List<Color>
+    val gradientColors: List<Color>,
+    /** What actually gets searched when the tile is tapped. */
+    val searchTerm: String = title
 )
 
 val searchCategories = listOf(
-    SearchCategory("Pop & Upbeat", "Upbeat pop track with energetic synth beats", listOf(Color(0xFF8E24AA), Color(0xFFD81B60))),
-    SearchCategory("Lo-Fi & Study", "Chill lo-fi study beats with soft piano", listOf(Color(0xFF3949AB), Color(0xFF1E88E5))),
-    SearchCategory("Ambient & Calm", "Peaceful ambient soundscape for relaxation", listOf(Color(0xFF00897B), Color(0xFF43A047))),
-    SearchCategory("Cinematic Epic", "Dramatic epic orchestral soundtrack for movies", listOf(Color(0xFFE65100), Color(0xFFF57C00))),
-    SearchCategory("Acoustic Vibes", "Warm acoustic guitar melody with gentle tempo", listOf(Color(0xFF6D4C41), Color(0xFF8D6E63))),
-    SearchCategory("Electronic EDM", "High-energy electronic dance track with heavy bass", listOf(Color(0xFFC2185B), Color(0xFF7B1FA2)))
+    SearchCategory("Pop & Upbeat", "Upbeat pop track with energetic synth beats", listOf(Color(0xFF8E24AA), Color(0xFFD81B60)), "upbeat pop"),
+    SearchCategory("Lo-Fi & Study", "Chill lo-fi study beats with soft piano", listOf(Color(0xFF3949AB), Color(0xFF1E88E5)), "lofi study"),
+    SearchCategory("Ambient & Calm", "Peaceful ambient soundscape for relaxation", listOf(Color(0xFF00897B), Color(0xFF43A047)), "ambient calm"),
+    SearchCategory("Cinematic Epic", "Dramatic epic orchestral soundtrack for movies", listOf(Color(0xFFE65100), Color(0xFFF57C00)), "epic cinematic orchestral"),
+    SearchCategory("Acoustic Vibes", "Warm acoustic guitar melody with gentle tempo", listOf(Color(0xFF6D4C41), Color(0xFF8D6E63)), "acoustic guitar"),
+    SearchCategory("Electronic EDM", "High-energy electronic dance track with heavy bass", listOf(Color(0xFFC2185B), Color(0xFF7B1FA2)), "electronic dance edm")
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(
     onNavigateToGenerate: (String) -> Unit = {},
     viewModel: SearchViewModel = viewModel()
 ) {
-    val context = LocalContext.current
-    val repository = remember { MusicRepository.getInstance(context) }
-    val likedTrackIds by repository.likedTrackIds.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-
-    val currentTrackId by PlayerController.currentTrackId.collectAsStateWithLifecycle()
-    val isPlaying by PlayerController.isPlaying.collectAsStateWithLifecycle()
-    val isBuffering by PlayerController.isBuffering.collectAsStateWithLifecycle()
 
     var selectedAlbum by remember { mutableStateOf<Album?>(null) }
     var selectedArtist by remember { mutableStateOf<Artist?>(null) }
-    var showVoiceSearchSheet by remember { mutableStateOf(false) }
+    var showVoiceSheet by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        viewModel.loadRecentQueries()
-    }
+    LaunchedEffect(Unit) { viewModel.loadRecentQueries() }
 
-    Column(
+    // System back from the search page returns to the landing page.
+    BackHandler(enabled = uiState.isSearchOpen) { viewModel.closeSearch() }
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+    ) {
+        SearchLanding(
+            recentQueries = uiState.recentQueries,
+            onOpenSearch = { viewModel.openSearch() },
+            onMicClick = { showVoiceSheet = true },
+            onRecentClick = { viewModel.openSearch(it) },
+            onClearHistory = { viewModel.clearSearchHistory() },
+            onCategoryClick = { viewModel.openSearch(it.searchTerm) }
+        )
+
+        AnimatedVisibility(
+            visible = uiState.isSearchOpen,
+            enter = fadeIn(tween(180)) + slideInVertically(tween(220)) { it / 16 },
+            exit = fadeOut(tween(140))
+        ) {
+            SearchPage(
+                uiState = uiState,
+                viewModel = viewModel,
+                onBack = { viewModel.closeSearch() },
+                onMicClick = { showVoiceSheet = true },
+                onArtistClick = { selectedArtist = it },
+                onAlbumClick = { selectedAlbum = it }
+            )
+        }
+    }
+
+    if (showVoiceSheet) {
+        VoiceSearchSheet(
+            onDismiss = { showVoiceSheet = false },
+            onQuery = { text ->
+                showVoiceSheet = false
+                viewModel.openSearch(text)
+            }
+        )
+    }
+
+    selectedAlbum?.let { album ->
+        AlbumDetailSheet(album = album, onDismiss = { selectedAlbum = null })
+    }
+    selectedArtist?.let { artist ->
+        ArtistDetailSheet(artist = artist, onDismiss = { selectedArtist = null })
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Page 1: landing
+// ---------------------------------------------------------------------------------------------
+
+@Composable
+private fun SearchLanding(
+    recentQueries: List<String>,
+    onOpenSearch: () -> Unit,
+    onMicClick: () -> Unit,
+    onRecentClick: (String) -> Unit,
+    onClearHistory: () -> Unit,
+    onCategoryClick: (SearchCategory) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
             .padding(horizontal = 20.dp, vertical = 24.dp)
     ) {
         Text(
@@ -150,83 +196,212 @@ fun SearchScreen(
             color = MaterialTheme.colorScheme.onBackground
         )
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(20.dp))
 
-        SearchField(
-            value = uiState.query,
-            onValueChange = { viewModel.onQueryChanged(it) },
-            placeholderText = "Search songs, artists, or albums...",
-            onMicClick = { showVoiceSearchSheet = true }
+        NeonSearchBar(
+            placeholderText = "Search songs, artists, or albums",
+            onClick = onOpenSearch,
+            onMicClick = onMicClick
         )
+
+        Spacer(modifier = Modifier.height(26.dp))
+
+        if (recentQueries.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                SectionHeader(title = "Recent Searches", modifier = Modifier.weight(1f))
+                TextButton(onClick = onClearHistory) {
+                    Text("Clear", color = MaterialTheme.colorScheme.primary)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(items = recentQueries, key = { it }) { query ->
+                    MoodChip(text = "🕒 $query", onClick = { onRecentClick(query) })
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+
+        SectionHeader(title = "Browse Categories")
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        // Filter Chips Row
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+            contentPadding = PaddingValues(bottom = 24.dp)
         ) {
-            FilterChip(
-                selected = uiState.activeFilter == SearchFilter.ALL,
-                onClick = { viewModel.onFilterSelected(SearchFilter.ALL) },
-                label = { Text("All") }
-            )
-            FilterChip(
-                selected = uiState.activeFilter == SearchFilter.SONGS,
-                onClick = { viewModel.onFilterSelected(SearchFilter.SONGS) },
-                label = { Text("Songs") }
-            )
-            FilterChip(
-                selected = uiState.activeFilter == SearchFilter.ARTISTS,
-                onClick = { viewModel.onFilterSelected(SearchFilter.ARTISTS) },
-                label = { Text("Artists") }
-            )
-            FilterChip(
-                selected = uiState.activeFilter == SearchFilter.ALBUMS,
-                onClick = { viewModel.onFilterSelected(SearchFilter.ALBUMS) },
-                label = { Text("Albums") }
+            items(items = searchCategories, key = { it.title }) { category ->
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(1.6f)
+                        .clickable { onCategoryClick(category) },
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Brush.linearGradient(category.gradientColors))
+                            .padding(14.dp),
+                        contentAlignment = Alignment.BottomStart
+                    ) {
+                        Text(
+                            text = category.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Page 2: full-screen black search page
+// ---------------------------------------------------------------------------------------------
+
+@Composable
+private fun SearchPage(
+    uiState: SearchUiState,
+    viewModel: SearchViewModel,
+    onBack: () -> Unit,
+    onMicClick: () -> Unit,
+    onArtistClick: (Artist) -> Unit,
+    onAlbumClick: (Album) -> Unit
+) {
+    val context = LocalContext.current
+    val repository = remember { MusicRepository.getInstance(context) }
+    val likedTrackIds by repository.likedTrackIds.collectAsStateWithLifecycle()
+    val currentTrackId by PlayerController.currentTrackId.collectAsStateWithLifecycle()
+    val isPlaying by PlayerController.isPlaying.collectAsStateWithLifecycle()
+    val isBuffering by PlayerController.isBuffering.collectAsStateWithLifecycle()
+
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focusRequester = remember { FocusRequester() }
+
+    // Focus the field right away when the page was opened empty (not when opened by voice / a chip).
+    LaunchedEffect(Unit) {
+        if (uiState.query.isBlank()) {
+            delay(200)
+            runCatching { focusRequester.requestFocus() }
+        }
+    }
+
+    val filter = uiState.activeFilter
+    val results = uiState.searchResult
+    val songs = if (filter == SearchFilter.ALL || filter == SearchFilter.SONGS) results.songs else emptyList()
+    val artists = if (filter == SearchFilter.ALL || filter == SearchFilter.ARTISTS) results.artists else emptyList()
+    val albums = if (filter == SearchFilter.ALL || filter == SearchFilter.ALBUMS) results.albums else emptyList()
+    val hasResults = songs.isNotEmpty() || artists.isNotEmpty() || albums.isNotEmpty()
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            // Swallow taps so nothing underneath (the landing page) can be triggered.
+            .pointerInput(Unit) { detectTapGestures { } }
+            .padding(top = 12.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(end = 16.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    imageVector = Icons.Default.ArrowBack,
+                    contentDescription = "Back",
+                    tint = Color.White
+                )
+            }
+            PillSearchInput(
+                value = uiState.query,
+                onValueChange = { viewModel.onQueryChanged(it) },
+                onSearch = {
+                    viewModel.submitQuery(it)
+                    keyboard?.hide()
+                },
+                onMicClick = onMicClick,
+                modifier = Modifier.weight(1f),
+                focusRequester = focusRequester
             )
         }
 
-        Spacer(modifier = Modifier.height(18.dp))
-
-        if (uiState.isSearching) {
-            LoadingState(message = "Searching music catalogue...")
-        } else if (uiState.errorMessage != null) {
-            ErrorState(message = uiState.errorMessage!!, onRetry = { viewModel.onQueryChanged(uiState.query) })
-        } else if (uiState.query.isNotBlank()) {
-            // Live Search Results View
-            val results = uiState.searchResult
-            val hasResults = results.songs.isNotEmpty() || results.artists.isNotEmpty() || results.albums.isNotEmpty()
-
-            if (!hasResults) {
-                EmptyState(
-                    title = "No search results",
-                    subtitle = "We couldn't find any songs, artists or albums matching \"${uiState.query}\". Check spelling or search another keyword."
+        if (uiState.query.isNotBlank()) {
+            SearchFilterRow(
+                active = filter,
+                onSelect = { viewModel.onFilterSelected(it) },
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            )
+            if (uiState.isSearching && hasResults) {
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    color = MintPrimary,
+                    trackColor = Color.Transparent
                 )
-            } else {
-                LazyColumn(
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 16.dp)
+        ) {
+            when {
+                uiState.query.isBlank() -> RecentSearchList(
+                    recent = uiState.recentQueries,
+                    onPick = { viewModel.submitQuery(it); keyboard?.hide() },
+                    onFill = { viewModel.onQueryChanged(it) },
+                    onClear = { viewModel.clearSearchHistory() }
+                )
+
+                uiState.isSearching && !hasResults -> LoadingState(message = "Searching music catalogue...")
+
+                uiState.errorMessage != null -> ErrorState(
+                    message = uiState.errorMessage,
+                    onRetry = { viewModel.retry() }
+                )
+
+                !hasResults -> EmptyState(
+                    title = "No search results",
+                    subtitle = "We couldn't find any ${filterLabel(filter)} matching \"${uiState.query}\". Check spelling or try another keyword."
+                )
+
+                else -> LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp)
                 ) {
-                    if (results.songs.isNotEmpty()) {
-                        item(key = "songs_header") {
-                            SectionHeader(title = "Songs (${results.songs.size})")
-                        }
-                        items(
-                            items = results.songs,
-                            key = { it.id }
-                        ) { track ->
+                    if (songs.isNotEmpty()) {
+                        item(key = "songs_header") { SectionHeader(title = "Songs") }
+                        items(items = songs, key = { it.id }) { track ->
                             val isLiked = track.id in likedTrackIds
-                            val isActive = (track.id == currentTrackId)
                             TrackRow(
                                 title = track.title,
                                 subtitle = "${track.artist} • 30s Preview",
                                 coverModel = track.artworkUrl,
-                                isActive = isActive,
+                                isActive = track.id == currentTrackId,
                                 isPlaying = isPlaying,
                                 isBuffering = isBuffering,
-                                onClick = { viewModel.playTrack(track, results.songs) },
+                                onClick = {
+                                    keyboard?.hide()
+                                    viewModel.saveCurrentQuery()
+                                    viewModel.playTrack(track, results.songs)
+                                },
                                 trailingContent = {
                                     IconButton(onClick = { viewModel.toggleLike(track) }) {
                                         Icon(
@@ -240,111 +415,52 @@ fun SearchScreen(
                         }
                     }
 
-                    if (results.artists.isNotEmpty()) {
-                        item(key = "artists_header") {
-                            SectionHeader(title = "Artists")
-                            Spacer(modifier = Modifier.height(8.dp))
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                                items(
-                                    items = results.artists,
-                                    key = { it.id }
-                                ) { artist ->
-                                    ArtistCard(artist = artist, onClick = { selectedArtist = artist })
+                    if (artists.isNotEmpty()) {
+                        item(key = "artists_header") { SectionHeader(title = "Artists") }
+                        if (filter == SearchFilter.ARTISTS) {
+                            itemsIndexed(artists.chunked(3), key = { i, _ -> "artist_row_$i" }) { _, row ->
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                    row.forEach { ArtistCard(artist = it, onClick = { onArtistClick(it) }) }
+                                }
+                            }
+                        } else {
+                            item(key = "artists_row") {
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                    items(items = artists, key = { it.id }) { artist ->
+                                        ArtistCard(artist = artist, onClick = { onArtistClick(artist) })
+                                    }
                                 }
                             }
                         }
                     }
 
-                    if (results.albums.isNotEmpty()) {
-                        item(key = "albums_header") {
-                            SectionHeader(title = "Albums")
-                            Spacer(modifier = Modifier.height(8.dp))
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                                items(
-                                    items = results.albums,
-                                    key = { it.id }
-                                ) { album ->
-                                    TrackCard(
-                                        title = album.title,
-                                        subtitle = album.artist,
-                                        coverModel = album.artworkUrl,
-                                        onClick = { selectedAlbum = album }
-                                    )
+                    if (albums.isNotEmpty()) {
+                        item(key = "albums_header") { SectionHeader(title = "Albums") }
+                        if (filter == SearchFilter.ALBUMS) {
+                            itemsIndexed(albums.chunked(2), key = { i, _ -> "album_row_$i" }) { _, row ->
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                    row.forEach { album ->
+                                        TrackCard(
+                                            title = album.title,
+                                            subtitle = album.artist,
+                                            coverModel = album.artworkUrl,
+                                            onClick = { onAlbumClick(album) }
+                                        )
+                                    }
                                 }
                             }
-                        }
-                    }
-                }
-            }
-        } else {
-            // Empty Query: Show Recent Searches + Browse Categories
-            Column(modifier = Modifier.fillMaxSize()) {
-                if (uiState.recentQueries.isNotEmpty()) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        SectionHeader(title = "Recent Searches")
-                        TextButton(onClick = { viewModel.clearSearchHistory() }) {
-                            Text("Clear", color = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        items(
-                            items = uiState.recentQueries,
-                            key = { it }
-                        ) { query ->
-                            MoodChip(
-                                text = "🕒 $query",
-                                onClick = { viewModel.onQueryChanged(query) }
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(24.dp))
-                }
-
-                SectionHeader(title = "Browse Categories")
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
-                    contentPadding = PaddingValues(bottom = 24.dp)
-                ) {
-                    items(
-                        items = searchCategories,
-                        key = { it.title }
-                    ) { category ->
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(1.6f)
-                                .clickable {
-                                    viewModel.onQueryChanged(category.title)
-                                },
-                            shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color.Transparent)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(Brush.linearGradient(category.gradientColors))
-                                    .padding(14.dp),
-                                contentAlignment = Alignment.BottomStart
-                            ) {
-                                Text(
-                                    text = category.title,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
+                        } else {
+                            item(key = "albums_row") {
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                    items(items = albums, key = { it.id }) { album ->
+                                        TrackCard(
+                                            title = album.title,
+                                            subtitle = album.artist,
+                                            coverModel = album.artworkUrl,
+                                            onClick = { onAlbumClick(album) }
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -352,353 +468,120 @@ fun SearchScreen(
             }
         }
     }
+}
 
-    if (showVoiceSearchSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showVoiceSearchSheet = false }
-        ) {
-            VoiceSearchWorkspace(
-                context = context,
-                onSearchSubmit = { recognizedQuery ->
-                    viewModel.onQueryChanged(recognizedQuery)
-                    showVoiceSearchSheet = false
-                },
-                onClose = { showVoiceSearchSheet = false }
+private fun filterLabel(filter: SearchFilter): String = when (filter) {
+    SearchFilter.SONGS -> "songs"
+    SearchFilter.ARTISTS -> "artists"
+    SearchFilter.ALBUMS -> "albums"
+    else -> "songs, artists or albums"
+}
+
+@Composable
+private fun SearchFilterRow(
+    active: SearchFilter,
+    onSelect: (SearchFilter) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val options = listOf(
+        SearchFilter.ALL to "All",
+        SearchFilter.SONGS to "Songs",
+        SearchFilter.ARTISTS to "Artists",
+        SearchFilter.ALBUMS to "Albums"
+    )
+    Row(modifier = modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        options.forEach { (filter, label) ->
+            FilterChip(
+                selected = active == filter,
+                onClick = { onSelect(filter) },
+                label = { Text(label) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = MintPrimary.copy(alpha = 0.18f),
+                    selectedLabelColor = MintPrimary
+                )
             )
         }
-    }
-
-    if (selectedAlbum != null) {
-        AlbumDetailSheet(
-            album = selectedAlbum!!,
-            onDismiss = { selectedAlbum = null }
-        )
-    }
-
-    if (selectedArtist != null) {
-        ArtistDetailSheet(
-            artist = selectedArtist!!,
-            onDismiss = { selectedArtist = null }
-        )
     }
 }
 
 @Composable
-fun VoiceSearchWorkspace(
-    context: Context,
-    onSearchSubmit: (String) -> Unit,
-    onClose: () -> Unit
+private fun RecentSearchList(
+    recent: List<String>,
+    onPick: (String) -> Unit,
+    onFill: (String) -> Unit,
+    onClear: () -> Unit
 ) {
-    var voiceState by remember { mutableStateOf(VoiceState.IDLE) }
-    var partialText by remember { mutableStateOf("") }
-    var recognizedText by remember { mutableStateOf("") }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-
-    val isRecognitionAvailable = remember(context) {
-        SpeechRecognizer.isRecognitionAvailable(context)
-    }
-
-    var hasPermission by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.RECORD_AUDIO
-            ) == PackageManager.PERMISSION_GRANTED
-        )
-    }
-
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        hasPermission = granted
-    }
-
-    var recognizer by remember { mutableStateOf<SpeechRecognizer?>(null) }
-
-    val listener = remember {
-        object : RecognitionListener {
-            override fun onReadyForSpeech(params: Bundle?) {
-                voiceState = VoiceState.LISTENING
-                errorMessage = null
-            }
-
-            override fun onBeginningOfSpeech() {
-                voiceState = VoiceState.LISTENING
-            }
-
-            override fun onRmsChanged(rmsdB: Float) {}
-
-            override fun onBufferReceived(buffer: ByteArray?) {}
-
-            override fun onEndOfSpeech() {
-                voiceState = VoiceState.PROCESSING
-            }
-
-            override fun onError(error: Int) {
-                voiceState = VoiceState.ERROR
-                val friendlyMessage = when (error) {
-                    SpeechRecognizer.ERROR_AUDIO -> "Audio recording error"
-                    SpeechRecognizer.ERROR_CLIENT -> "Client side error"
-                    SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Microphone permission required"
-                    SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Network connection error"
-                    SpeechRecognizer.ERROR_NO_MATCH -> "No speech recognized. Try speaking again."
-                    SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Recognizer busy. Please try again."
-                    SpeechRecognizer.ERROR_SERVER -> "Server error"
-                    SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech heard"
-                    SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED -> "Language not supported"
-                    else -> "Speech recognition failed (Error $error)"
-                }
-                errorMessage = friendlyMessage
-
-                if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) {
-                    try {
-                        recognizer?.cancel()
-                        recognizer?.destroy()
-                        recognizer = SpeechRecognizer.createSpeechRecognizer(context)
-                    } catch (_: Exception) {}
-                }
-            }
-
-            override fun onResults(results: Bundle?) {
-                val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                val text = matches?.firstOrNull().orEmpty()
-                if (text.isNotBlank()) {
-                    recognizedText = text
-                    voiceState = VoiceState.RESULT
-                } else {
-                    voiceState = VoiceState.ERROR
-                    errorMessage = "No speech recognized. Try speaking again."
-                }
-            }
-
-            override fun onPartialResults(partialResults: Bundle?) {
-                val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                val text = matches?.firstOrNull().orEmpty()
-                if (text.isNotBlank()) {
-                    partialText = text
-                }
-            }
-
-            override fun onEvent(eventType: Int, params: Bundle?) {}
+    if (recent.isEmpty()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = 48.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "Search for songs, artists or albums",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "Or tap the mic to speak, or to identify a song playing nearby",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
+        return
     }
 
-    DisposableEffect(context) {
-        if (isRecognitionAvailable) {
-            val sr = SpeechRecognizer.createSpeechRecognizer(context)
-            recognizer = sr
-        }
-        onDispose {
-            recognizer?.stopListening()
-            recognizer?.cancel()
-            recognizer?.destroy()
-            recognizer = null
-        }
-    }
-
-    val speechIntent = remember {
-        Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
-        }
-    }
-
-    fun startListening() {
-        errorMessage = null
-        partialText = ""
-        voiceState = VoiceState.LISTENING
-        try {
-            recognizer?.setRecognitionListener(listener)
-            recognizer?.startListening(speechIntent)
-        } catch (e: Exception) {
-            voiceState = VoiceState.ERROR
-            errorMessage = e.message ?: "Could not start speech recognizer"
-        }
-    }
-
-    fun stopListening() {
-        voiceState = VoiceState.PROCESSING
-        try {
-            recognizer?.stopListening()
-        } catch (_: Exception) {}
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 16.dp)
-    ) {
-        Text(
-            text = "🎤 Voice Search & Recognition",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold
-        )
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        if (!isRecognitionAvailable) {
-            Card(
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
+        item(key = "recent_header") {
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                )
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Speech recognition isn't available on this device",
+                    text = "Recent searches",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                TextButton(onClick = onClear) {
+                    Text("Clear all", color = MaterialTheme.colorScheme.primary)
+                }
+            }
+        }
+        items(items = recent, key = { it }) { query ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onPick(query) }
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.History,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 4.dp, end = 16.dp)
+                )
+                Text(
+                    text = query,
+                    modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.padding(18.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
-            }
-        } else if (!hasPermission) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer
-                )
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Microphone Permission Required",
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onErrorContainer
+                IconButton(onClick = { onFill(query) }) {
+                    Icon(
+                        imageVector = Icons.Default.NorthWest,
+                        contentDescription = "Use this search",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Grant audio recording permissions to search songs by voice.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onErrorContainer
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Button(onClick = { permissionLauncher.launch(Manifest.permission.RECORD_AUDIO) }) {
-                        Text("Grant Permission")
-                    }
-                }
-            }
-        } else {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                )
-            ) {
-                Column(
-                    modifier = Modifier.padding(20.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    when (voiceState) {
-                        VoiceState.LISTENING -> {
-                            Button(
-                                onClick = { stopListening() },
-                                shape = CircleShape,
-                                modifier = Modifier.size(76.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.error
-                                )
-                            ) {
-                                Text("⏹", style = MaterialTheme.typography.headlineMedium)
-                            }
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = "Listening... Speak song or artist name",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-
-                            if (partialText.isNotBlank()) {
-                                Spacer(modifier = Modifier.height(12.dp))
-                                Text(
-                                    text = "\"$partialText\"",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-
-                        VoiceState.PROCESSING -> {
-                            CircularProgressIndicator(strokeWidth = 3.dp)
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = "Processing speech...",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-
-                        VoiceState.IDLE, VoiceState.RESULT, VoiceState.ERROR -> {
-                            Button(
-                                onClick = { startListening() },
-                                shape = CircleShape,
-                                modifier = Modifier.size(76.dp)
-                            ) {
-                                Text("🎤", style = MaterialTheme.typography.headlineMedium)
-                            }
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = if (voiceState == VoiceState.RESULT) "Tap to speak again" else "Tap to start listening",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-
-                    if (recognizedText.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(20.dp))
-                        Text(
-                            text = "Recognized Search Query (Edit if needed):",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.align(Alignment.Start)
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        OutlinedTextField(
-                            value = recognizedText,
-                            onValueChange = { recognizedText = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            minLines = 2,
-                            shape = RoundedCornerShape(14.dp)
-                        )
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        Button(
-                            onClick = { onSearchSubmit(recognizedText) },
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = recognizedText.isNotBlank()
-                        ) {
-                            Text("Search Catalogue ▶")
-                        }
-                    }
-
-                    if (errorMessage != null) {
-                        Spacer(modifier = Modifier.height(14.dp))
-                        Text(
-                            text = errorMessage!!,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
                 }
             }
         }
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        OutlinedButton(
-            onClick = onClose,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp)
-        ) {
-            Text("Close")
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
     }
 }
 
@@ -740,7 +623,7 @@ private fun ArtistCard(artist: Artist, onClick: () -> Unit) {
             text = artist.name,
             style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = Color.White,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
